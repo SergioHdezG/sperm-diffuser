@@ -63,3 +63,21 @@ def summary(name_data_dict,
     with tf.name_scope(name):
         for name, data in name_data_dict.items():
             _summary(name, data)
+
+def summary_img(name_data_dict,
+            step=None,
+            historgram_buckets=None,
+            name='summary_img'):
+    """Summary.
+
+    Examples
+    --------
+    >>> summary({'a': data_a, 'b': data_b})
+
+    """
+    def _summary(name, data):
+            tf.summary.image(name, data, step=step)
+
+    with tf.name_scope(name):
+        for name, data in name_data_dict.items():
+            _summary(name, data)

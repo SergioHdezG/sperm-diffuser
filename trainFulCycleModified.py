@@ -11,36 +11,37 @@ import tqdm
 
 import data
 import module
-
+import moduleModified
 
 # ==============================================================================
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--dataset', default='summer2winter_yosemite')
+py.arg('--output_dir', default='BezierImage2SpermImageConditioned')
+py.arg('--dataset', default='FulBezierSplines2FulSperm')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size
 py.arg('--crop_size', type=int, default=256)  # then crop to this size
 py.arg('--batch_size', type=int, default=1)
 py.arg('--epochs', type=int, default=200)
 py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
-py.arg('--lr', type=float, default=0.0002)
+py.arg('--lr', type=float, default=0.0001)
 py.arg('--beta_1', type=float, default=0.5)
 py.arg('--adversarial_loss_mode', default='lsgan', choices=['gan', 'hinge_v1', 'hinge_v2', 'lsgan', 'wgan'])
-py.arg('--gradient_penalty_mode', default='none', choices=['none', 'dragan', 'wgan-gp'])
+py.arg('--gradient_penalty_mode', default='wgan-gp', choices=['none', 'dragan', 'wgan-gp'])
 py.arg('--gradient_penalty_weight', type=float, default=10.0)
 py.arg('--cycle_loss_weight', type=float, default=10.0)
 py.arg('--identity_loss_weight', type=float, default=0.0)
 py.arg('--pool_size', type=int, default=50)  # pool size to store fake samples
-py.arg('--trainA', type=str, default='trainA')  # pool size to store fake samples
-py.arg('--trainB', type=str, default='trainB')  # pool size to store fake samples
-py.arg('--testA', type=str, default='testA')  # pool size to store fake samples
-py.arg('--testB', type=str, default='testB')  # pool size to store fake samples
-py.arg('--fileExtension', type=str, default='jpg')  # pool size to store fake samples
+py.arg('--trainA', type=str, default='trainFulBezierImage')  # pool size to store fake samples
+py.arg('--trainB', type=str, default='trainFulSpermImage')  # pool size to store fake samples
+py.arg('--testA', type=str, default='testFulBezierImage')  # pool size to store fake samples
+py.arg('--testB', type=str, default='testFulSpermImage')  # pool size to store fake samples
+py.arg('--fileExtension', type=str, default='png')  # pool size to store fake samples
 args = py.args()
 
 # output_dir
-output_dir = py.join('output', args.dataset)
+output_dir = py.join('output', args.output_dir)
 py.mkdir(output_dir)
 
 # save settings
@@ -67,8 +68,11 @@ A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, 
 # =                                   models                                   =
 # ==============================================================================
 
-G_A2B = module.ResnetGenerator(input_shape=(args.crop_size, args.crop_size, 3))
-G_B2A = module.ResnetGenerator(input_shape=(args.crop_size, args.crop_size, 3))
+G_A2B_Enc = moduleModified.ForwardGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, 3))
+G_A2B_Dec = moduleModified.ForwardGeneratorDecoder(input_shape=G_A2B_Enc.output_shape[1:])
+
+G_B2A_Enc = moduleModified.BackwardGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, 3))
+G_B2A_Dec = moduleModified.BackwardGeneratorDecoder(input_shape=G_A2B_Enc.output_shape[1:])
 
 D_A = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, 3))
 D_B = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, 3))
@@ -87,16 +91,59 @@ D_optimizer = keras.optimizers.Adam(learning_rate=D_lr_scheduler, beta_1=args.be
 # =                                 train step                                 =
 # ==============================================================================
 
+def G_A2B(A, codes, training=True):
+    A_latent = G_A2B_Enc(A, training=training)
+    A2B = G_A2B_Dec([A_latent, codes], training=training)
+    return A2B, A_latent
+
+def G_B2A(B, training=True):
+    B_latent, B_code = G_B2A_Enc(B, training=training)
+    B_code_u, B_code_logvar = tf.split(B_code, 2, axis=-1)
+    B2A = G_B2A_Dec(B_latent, training=training)
+    return B2A, B_latent, B_code_u, B_code_logvar
+
+def G_A2A(A, training=True):
+    A_latent = G_A2B_Enc(A, training=training)
+    A2A = G_B2A_Dec(A_latent, training=training)
+    return A2A
+
+def G_B2B(B, training=True):
+    B_latent, B_code = G_B2A_Enc(B, training=training)
+    B_code_u, B_code_logvar = tf.split(B_code, 2, axis=-1)
+    codes = reparametrize(B_code_u, B_code_logvar)
+    B2B = G_A2B_Dec([B_latent, codes], training=training)
+    return B2B
+
+@tf.function
+def reparametrize(u, logvar):
+    eps = tf.random.normal(shape=u.shape)
+    return eps * tf.exp(logvar * .5) + u
+
+@tf.function
+def log_normal_pdf(sample, mean, logvar, raxis=1):
+  log2pi = tf.math.log(2. * np.pi)
+  return tf.reduce_sum(
+      -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),axis=raxis)
+
+
 @tf.function
 def train_G(A, B):
     with tf.GradientTape() as t:
-        A2B = G_A2B(A, training=True)
-        B2A = G_B2A(B, training=True)
-        A2B2A = G_B2A(A2B, training=True)
-        B2A2B = G_A2B(B2A, training=True)
-        A2A = G_B2A(A, training=True)
-        B2B = G_A2B(B, training=True)
+        # Standard Cycle-GAN
+        B2A, B_latent, B_code_u, B_code_logvar = G_B2A(B, training=True)
+        rand_code = tf.random.normal(shape=B_code_u.shape)
+        A2B, A_latent = G_A2B(A, rand_code, training=True)
 
+        A2B2A, A2B2A_latent, _, _ = G_B2A(A2B, training=True)
+        z = reparametrize(B_code_u, B_code_logvar)
+        B2A2B, B2A2B_latent = G_A2B(B2A, z, training=True)
+
+        # Modification
+        # Reparametrized identity calculation
+        A2A = G_A2A(A, training=True)
+        B2B = G_B2B(B, training=True)
+
+        # Standard Cycle-GAN
         A2B_d_logits = D_B(A2B, training=True)
         B2A_d_logits = D_A(B2A, training=True)
 
@@ -107,17 +154,29 @@ def train_G(A, B):
         A2A_id_loss = identity_loss_fn(A, A2A)
         B2B_id_loss = identity_loss_fn(B, B2B)
 
-        G_loss = (A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight + (A2A_id_loss + B2B_id_loss) * args.identity_loss_weight
+        G_loss = (A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight + (
+                    A2A_id_loss + B2B_id_loss) * args.identity_loss_weight
 
-    G_grad = t.gradient(G_loss, G_A2B.trainable_variables + G_B2A.trainable_variables)
-    G_optimizer.apply_gradients(zip(G_grad, G_A2B.trainable_variables + G_B2A.trainable_variables))
+        # Modification
+        # Identity in splines latent spaces
+        spline_latent_loss = tf.reduce_mean(
+            tf.losses.mse(A_latent, A2B2A_latent) + tf.losses.mse(B_latent, B2A2B_latent))
+
+        # Maintain code_u and code_logvar as a normal distribution N(0, 1)
+        logpz = log_normal_pdf(z, 0., 0.)  # mean = 0 and logvar = 0 equivalent to var = 1
+
+        G_loss += spline_latent_loss - logpz
+    G_grad = t.gradient(G_loss, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables+  G_B2A_Enc.trainable_variables + G_B2A_Dec.trainable_variables)
+    G_optimizer.apply_gradients(zip(G_grad, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables+  G_B2A_Enc.trainable_variables + G_B2A_Dec.trainable_variables))
 
     return A2B, B2A, {'A2B_g_loss': A2B_g_loss,
                       'B2A_g_loss': B2A_g_loss,
                       'A2B2A_cycle_loss': A2B2A_cycle_loss,
                       'B2A2B_cycle_loss': B2A2B_cycle_loss,
                       'A2A_id_loss': A2A_id_loss,
-                      'B2B_id_loss': B2B_id_loss}
+                      'B2B_id_loss': B2B_id_loss,
+                      'spline_latent_loss': spline_latent_loss,
+                      'logpz': tf.reduce_sum(logpz)}
 
 
 @tf.function
@@ -158,11 +217,14 @@ def train_step(A, B):
 
 @tf.function
 def sample(A, B):
-    A2B = G_A2B(A, training=False)
-    B2A = G_B2A(B, training=False)
-    A2B2A = G_B2A(A2B, training=False)
-    B2A2B = G_A2B(B2A, training=False)
-    return A2B, B2A, A2B2A, B2A2B
+    B2A, B_latent, B_code_u, B_code_logvar = G_B2A(B, training=False)
+    eps = tf.random.normal(shape=B_code_u.shape)
+    A2B, A_latent = G_A2B(A, eps, training=False)
+    A2B2A, _, _, _ = G_B2A(A2B, training=False)
+    B2A2B, _ = G_A2B(B2A, reparametrize(B_code_u, B_code_logvar), training=False)
+    A2A = G_A2A(A, training=False)
+    B2B = G_B2B(B, training=False)
+    return A2B, B2A, A2B2A, B2A2B, A2A, B2B
 
 
 # ==============================================================================
@@ -173,8 +235,10 @@ def sample(A, B):
 ep_cnt = tf.Variable(initial_value=0, trainable=False, dtype=tf.int64)
 
 # checkpoint
-checkpoint = tl.Checkpoint(dict(G_A2B=G_A2B,
-                                G_B2A=G_B2A,
+checkpoint = tl.Checkpoint(dict(G_A2B_Enc=G_A2B_Enc,
+                                G_A2B_Dec=G_A2B_Dec,
+                                G_B2A_Enc=G_B2A_Enc,
+                                G_B2A_Dec=G_B2A_Dec,
                                 D_A=D_A,
                                 D_B=D_B,
                                 G_optimizer=G_optimizer,
@@ -214,10 +278,13 @@ with train_summary_writer.as_default():
             tl.summary({'learning rate': G_lr_scheduler.current_learning_rate}, step=G_optimizer.iterations, name='learning rate')
 
             # sample
-            if G_optimizer.iterations.numpy() % 10 == 0:
+            if G_optimizer.iterations.numpy() % 250 == 0:
                 A, B = next(test_iter)
-                A2B, B2A, A2B2A, B2A2B = sample(A, B)
-                img = im.immerge(np.concatenate([A, A2B, A2B2A, B, B2A, B2A2B], axis=0), n_rows=2)
+                A2B, B2A, A2B2A, B2A2B, A2A, B2B = sample(A, B)
+                img = im.immerge(np.concatenate([A, A2B, A2B2A, A2A, B, B2A, B2A2B, B2B], axis=0), n_rows=2)
+                tl.summary_img({'images': img}, step=G_optimizer.iterations,
+                           name='images')
+
                 im.imwrite(img, py.join(sample_dir, 'iter-%09d.jpg' % G_optimizer.iterations.numpy()))
 
         # save checkpoint

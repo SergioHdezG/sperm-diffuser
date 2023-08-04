@@ -44,7 +44,7 @@ def save_yaml(path, data, **kwargs):
 def load_yaml(path, **kwargs):
     import oyaml as yaml
     with open(path) as f:
-        return yaml.load(f, **kwargs)
+        return yaml.safe_load(f, **kwargs)
 
 
 def save_pickle(path, obj, **kwargs):

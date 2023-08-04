@@ -107,6 +107,39 @@ def ConvDiscriminator(input_shape=(256, 256, 3),
 
     return keras.Model(inputs=inputs, outputs=h)
 
+def SplineDiscriminator(input_shape=(10, ),
+                      dim=16,
+                      n_downsamplings=2,
+                      norm='instance_norm'):
+
+    dim_ = dim
+    Norm = _get_norm_layer(norm)
+
+    # 0
+    h = inputs = keras.Input(shape=input_shape)
+
+    # 1
+    h = keras.layers.Dense(256)(h)
+    h = tf.nn.leaky_relu(h, alpha=0.2)
+    h = keras.layers.Dropout(0.2)(h)
+    h = keras.layers.Reshape((16, 16, 1))(h)
+
+    # 2
+    h = keras.layers.Conv2D(dim, 4, strides=1, padding='same', use_bias=False)(h)
+    h = Norm()(h)
+    h = tf.nn.leaky_relu(h, alpha=0.2)
+
+    # 3
+    h = keras.layers.Conv2D(dim, 4, strides=2, padding='same', use_bias=False)(h)
+    h = Norm()(h)
+    h = tf.nn.leaky_relu(h, alpha=0.2)
+
+    # 4
+    h = keras.layers.Conv2D(1, 4, strides=1, padding='same')(h)
+
+    return keras.Model(inputs=inputs, outputs=h)
+
+
 
 # ==============================================================================
 # =                          learning rate scheduler                           =

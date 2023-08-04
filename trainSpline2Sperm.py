@@ -1,5 +1,7 @@
 import functools
 
+import cv2
+
 import imlib as im
 import numpy as np
 import pylib as py
@@ -10,37 +12,44 @@ import tf2gan as gan
 import tqdm
 
 import data
+import moduleModified
 import module
+from spllib.spline_utils import bezierSpline2image
+
+# tf.config.run_functions_eagerly(True)
 
 
 # ==============================================================================
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--dataset', default='summer2winter_yosemite')
+py.arg('--output_dir', default='BezierSplines2SingleSpermAugmentation')
+py.arg('--dataset', default='BezierSplines2SingleSperm')
 py.arg('--datasets_dir', default='datasets')
-py.arg('--load_size', type=int, default=286)  # load image to this size
-py.arg('--crop_size', type=int, default=256)  # then crop to this size
-py.arg('--batch_size', type=int, default=1)
+py.arg('--load_size', type=int, default=140)  # load image to this size
+py.arg('--crop_size', type=int, default=140)  # then crop to this size
+py.arg('--batch_size', type=int, default=32)
 py.arg('--epochs', type=int, default=200)
 py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
-py.arg('--lr', type=float, default=0.0002)
+py.arg('--lr', type=float, default=0.00005)
 py.arg('--beta_1', type=float, default=0.5)
 py.arg('--adversarial_loss_mode', default='lsgan', choices=['gan', 'hinge_v1', 'hinge_v2', 'lsgan', 'wgan'])
-py.arg('--gradient_penalty_mode', default='none', choices=['none', 'dragan', 'wgan-gp'])
+py.arg('--gradient_penalty_mode', default='wgan-gp', choices=['none', 'dragan', 'wgan-gp'])
 py.arg('--gradient_penalty_weight', type=float, default=10.0)
 py.arg('--cycle_loss_weight', type=float, default=10.0)
 py.arg('--identity_loss_weight', type=float, default=0.0)
 py.arg('--pool_size', type=int, default=50)  # pool size to store fake samples
-py.arg('--trainA', type=str, default='trainA')  # pool size to store fake samples
-py.arg('--trainB', type=str, default='trainB')  # pool size to store fake samples
-py.arg('--testA', type=str, default='testA')  # pool size to store fake samples
-py.arg('--testB', type=str, default='testB')  # pool size to store fake samples
-py.arg('--fileExtension', type=str, default='jpg')  # pool size to store fake samples
 args = py.args()
 
+trainAfolder = 'trainSingleBezierSplines'
+trainBfolder = 'trainSingleSperm'
+testAfolder = 'testSingleBezierSplines'
+testBfolder = 'testSingleSperm'
+extensionA = '*.json'
+extensionB = '*.png'
+
 # output_dir
-output_dir = py.join('output', args.dataset)
+output_dir = py.join('output', args.output_dir)
 py.mkdir(output_dir)
 
 # save settings
@@ -51,27 +60,27 @@ py.args_to_yaml(py.join(output_dir, 'settings.yml'), args)
 # =                                    data                                    =
 # ==============================================================================
 
-A_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainA), '*.'+args.fileExtension)
-B_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainB), '*.'+args.fileExtension)
-A_B_dataset, len_dataset = data.make_zip_dataset(A_img_paths, B_img_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False)
+A_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, trainAfolder), extensionA)
+B_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, trainBfolder), extensionB)
+A_B_dataset, len_dataset = data.make_zip_datasetSplines2SSingleperm(A_img_paths, B_img_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False)
 
 A2B_pool = data.ItemPool(args.pool_size)
 B2A_pool = data.ItemPool(args.pool_size)
 
-A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA), '*.'+args.fileExtension)
-B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtension)
-A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, args.batch_size, args.load_size, args.crop_size, training=False, repeat=True)
+A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, testAfolder), extensionA)
+B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, testBfolder), extensionB)
+A_B_dataset_test, _ = data.make_zip_datasetSplines2SSingleperm(A_img_paths_test, B_img_paths_test, args.batch_size, args.load_size, args.crop_size, training=False, repeat=True)
 
 
 # ==============================================================================
 # =                                   models                                   =
 # ==============================================================================
 
-G_A2B = module.ResnetGenerator(input_shape=(args.crop_size, args.crop_size, 3))
-G_B2A = module.ResnetGenerator(input_shape=(args.crop_size, args.crop_size, 3))
+G_A2B = moduleModified.Splines2SingleSpermGenerator(input_shape=(10), output_channels=1, dim=32, n_downsamplings=2, norm='instance_norm')
+G_B2A = moduleModified.SingleSperm2SplineGenerator(input_shape=(140, 140, 1), output_channels=10, dim=32, n_downsamplings=2, norm='instance_norm')
 
-D_A = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, 3))
-D_B = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, 3))
+D_A = module.SplineDiscriminator(input_shape=(10, ), dim=32, norm='instance_norm')
+D_B = module.ConvDiscriminator(input_shape=(140, 140, 1), dim=32)
 
 d_loss_fn, g_loss_fn = gan.get_adversarial_losses_fn(args.adversarial_loss_mode)
 cycle_loss_fn = tf.losses.MeanAbsoluteError()
@@ -94,8 +103,8 @@ def train_G(A, B):
         B2A = G_B2A(B, training=True)
         A2B2A = G_B2A(A2B, training=True)
         B2A2B = G_A2B(B2A, training=True)
-        A2A = G_B2A(A, training=True)
-        B2B = G_A2B(B, training=True)
+        # A2A = G_B2A(A, training=True)
+        # B2B = G_A2B(B, training=True)
 
         A2B_d_logits = D_B(A2B, training=True)
         B2A_d_logits = D_A(B2A, training=True)
@@ -104,10 +113,10 @@ def train_G(A, B):
         B2A_g_loss = g_loss_fn(B2A_d_logits)
         A2B2A_cycle_loss = cycle_loss_fn(A, A2B2A)
         B2A2B_cycle_loss = cycle_loss_fn(B, B2A2B)
-        A2A_id_loss = identity_loss_fn(A, A2A)
-        B2B_id_loss = identity_loss_fn(B, B2B)
+        # A2A_id_loss = identity_loss_fn(A, A2A)
+        # B2B_id_loss = identity_loss_fn(B, B2B)
 
-        G_loss = (A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight + (A2A_id_loss + B2B_id_loss) * args.identity_loss_weight
+        G_loss = (A2B_g_loss + B2A_g_loss) + (0.01*A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight #+ (A2A_id_loss + B2B_id_loss) * args.identity_loss_weight
 
     G_grad = t.gradient(G_loss, G_A2B.trainable_variables + G_B2A.trainable_variables)
     G_optimizer.apply_gradients(zip(G_grad, G_A2B.trainable_variables + G_B2A.trainable_variables))
@@ -115,9 +124,7 @@ def train_G(A, B):
     return A2B, B2A, {'A2B_g_loss': A2B_g_loss,
                       'B2A_g_loss': B2A_g_loss,
                       'A2B2A_cycle_loss': A2B2A_cycle_loss,
-                      'B2A2B_cycle_loss': B2A2B_cycle_loss,
-                      'A2A_id_loss': A2A_id_loss,
-                      'B2B_id_loss': B2B_id_loss}
+                      'B2A2B_cycle_loss': B2A2B_cycle_loss}
 
 
 @tf.function
@@ -133,7 +140,7 @@ def train_D(A, B, A2B, B2A):
         D_A_gp = gan.gradient_penalty(functools.partial(D_A, training=True), A, B2A, mode=args.gradient_penalty_mode)
         D_B_gp = gan.gradient_penalty(functools.partial(D_B, training=True), B, A2B, mode=args.gradient_penalty_mode)
 
-        D_loss = (A_d_loss + B2A_d_loss) + (B_d_loss + A2B_d_loss) + (D_A_gp + D_B_gp) * args.gradient_penalty_weight
+        D_loss = (A_d_loss + B2A_d_loss) + 100*(B_d_loss + A2B_d_loss) + (D_A_gp + D_B_gp) * args.gradient_penalty_weight
 
     D_grad = t.gradient(D_loss, D_A.trainable_variables + D_B.trainable_variables)
     D_optimizer.apply_gradients(zip(D_grad, D_A.trainable_variables + D_B.trainable_variables))
@@ -214,11 +221,22 @@ with train_summary_writer.as_default():
             tl.summary({'learning rate': G_lr_scheduler.current_learning_rate}, step=G_optimizer.iterations, name='learning rate')
 
             # sample
-            if G_optimizer.iterations.numpy() % 10 == 0:
+            if G_optimizer.iterations.numpy() % 100 == 0:
                 A, B = next(test_iter)
                 A2B, B2A, A2B2A, B2A2B = sample(A, B)
-                img = im.immerge(np.concatenate([A, A2B, A2B2A, B, B2A, B2A2B], axis=0), n_rows=2)
-                im.imwrite(img, py.join(sample_dir, 'iter-%09d.jpg' % G_optimizer.iterations.numpy()))
+                A2B = tf.image.grayscale_to_rgb(A2B[:1])
+                A2B = tf.image.resize(A2B, [300, 300])
+                B = tf.image.grayscale_to_rgb(B[:1])
+                B = tf.image.resize(B, [300, 300])
+                B2A2B = tf.image.grayscale_to_rgb(B2A2B[:1])
+                B2A2B = tf.image.resize(B2A2B, [300, 300])
+
+                A_img = (tf.convert_to_tensor(bezierSpline2image(A[:1].numpy()), dtype=tf.float32)/255.)*2 -1
+                B2A_img = (tf.convert_to_tensor(bezierSpline2image(B2A[:1].numpy()), dtype=tf.float32)/255.)*2 -1
+                A2B2A_img = (tf.convert_to_tensor(bezierSpline2image(A2B2A[:1].numpy()), dtype=tf.float32)/255.)*2 -1
+
+                img = im.immerge(np.concatenate([A_img, A2B, A2B2A_img, B, B2A_img, B2A2B], axis=0), n_rows=2)
+                im.imwrite(img, py.join(sample_dir, 'iter-%09d-img.jpg' % G_optimizer.iterations.numpy()))
 
         # save checkpoint
         checkpoint.save(ep)

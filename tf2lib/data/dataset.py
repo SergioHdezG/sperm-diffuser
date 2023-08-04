@@ -1,7 +1,10 @@
 import multiprocessing
-
 import tensorflow as tf
-
+import json
+from json import JSONEncoder
+import numpy as np
+import ast
+from google.protobuf import json_format
 
 def batch_dataset(dataset,
                   batch_size,
@@ -89,7 +92,8 @@ def disk_image_batch_dataset(img_paths,
                              filter_after_map=False,
                              shuffle=True,
                              shuffle_buffer_size=None,
-                             repeat=None):
+                             repeat=None,
+                             channels=3):
     """Batch dataset of disk image for PNG and JPEG.
 
     Parameters
@@ -105,7 +109,7 @@ def disk_image_batch_dataset(img_paths,
 
     def parse_fn(path, *label):
         img = tf.io.read_file(path)
-        img = tf.image.decode_png(img, 3)  # fix channels to 3
+        img = tf.image.decode_png(img, channels)  # fix channels to 3
         return (img,) + label
 
     if map_fn:  # fuse `map_fn` and `parse_fn`
@@ -127,3 +131,76 @@ def disk_image_batch_dataset(img_paths,
                                         repeat=repeat)
 
     return dataset
+
+def disk_spl_batch_dataset(spl_paths,
+                             batch_size,
+                             labels=None,
+                             drop_remainder=True,
+                             n_prefetch_batch=1,
+                             filter_fn=None,
+                             map_fn=None,
+                             n_map_threads=None,
+                             filter_after_map=False,
+                             shuffle=True,
+                             shuffle_buffer_size=None,
+                             repeat=None):
+    """Batch dataset of disk image for PNG and JPEG.
+
+    Parameters
+    ----------
+    img_paths : 1d-tensor/ndarray/list of str
+    labels : nested structure of tensors/ndarrays/lists
+
+    """
+    if labels is None:
+        memory_data = np.asarray(spl_paths)
+    else:
+        memory_data = (np.asarray(spl_paths), np.asarray(labels))
+
+    def decode_json(path):
+        path = path.numpy().decode('ascii')
+        with tf.io.gfile.GFile(path, 'rb') as fid:
+            encoded_jpg = fid.read()
+        encoded_jpg = encoded_jpg.decode('ascii')
+        data = ast.literal_eval(encoded_jpg)['0']
+        data = ast.literal_eval(data)
+        data_tf = tf.convert_to_tensor(data, dtype=tf.float32)
+        return data_tf
+
+    def parse_fn(path, *label):
+        data = tf.py_function(func=decode_json, inp=[tf.convert_to_tensor(path, dtype=tf.string)], Tout=tf.float32)
+        return (data,) + label
+
+    if map_fn:  # fuse `map_fn` and `parse_fn`
+        def map_fn_(*args):
+            return map_fn(*parse_fn(*args))
+    else:
+        map_fn_ = parse_fn
+
+    dataset = memory_data_batch_dataset(memory_data,
+                                        batch_size,
+                                        drop_remainder=drop_remainder,
+                                        n_prefetch_batch=n_prefetch_batch,
+                                        filter_fn=filter_fn,
+                                        map_fn=map_fn_,
+                                        n_map_threads=n_map_threads,
+                                        filter_after_map=filter_after_map,
+                                        shuffle=shuffle,
+                                        shuffle_buffer_size=shuffle_buffer_size,
+                                        repeat=repeat)
+
+    return dataset
+
+
+class NumpyArrayEncoder(JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return JSONEncoder.default(self, obj)
+
+def read_json(path):
+    with open(path, 'r') as openfile:
+        # Reading from json file
+        json_object = json.load(openfile)
+    json_object = ast.literal_eval(json_object['0'])
+    return json_object
