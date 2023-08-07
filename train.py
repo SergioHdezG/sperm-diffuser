@@ -12,16 +12,15 @@ import tqdm
 import data
 import module
 
-
 # ==============================================================================
 # =                                   param                                    =
 # ==============================================================================
-
-py.arg('--dataset', default='summer2winter_yosemite')
+py.arg('--output_dir', default='BezierImage2SpermImage2')
+py.arg('--dataset', default='FulBezierSplines2FulSperm')
 py.arg('--datasets_dir', default='datasets')
-py.arg('--load_size', type=int, default=286)  # load image to this size
+py.arg('--load_size', type=int, default=350)  # load image to this size
 py.arg('--crop_size', type=int, default=256)  # then crop to this size
-py.arg('--batch_size', type=int, default=1)
+py.arg('--batch_size', type=int, default=4)
 py.arg('--epochs', type=int, default=200)
 py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
 py.arg('--lr', type=float, default=0.0002)
@@ -32,15 +31,15 @@ py.arg('--gradient_penalty_weight', type=float, default=10.0)
 py.arg('--cycle_loss_weight', type=float, default=10.0)
 py.arg('--identity_loss_weight', type=float, default=0.0)
 py.arg('--pool_size', type=int, default=50)  # pool size to store fake samples
-py.arg('--trainA', type=str, default='trainA')  # pool size to store fake samples
-py.arg('--trainB', type=str, default='trainB')  # pool size to store fake samples
-py.arg('--testA', type=str, default='testA')  # pool size to store fake samples
-py.arg('--testB', type=str, default='testB')  # pool size to store fake samples
-py.arg('--fileExtension', type=str, default='jpg')  # pool size to store fake samples
+py.arg('--trainA', type=str, default='trainFulBezierImage')  # pool size to store fake samples
+py.arg('--trainB', type=str, default='trainFulSpermImage')  # pool size to store fake samples
+py.arg('--testA', type=str, default='testFulBezierImage')  # pool size to store fake samples
+py.arg('--testB', type=str, default='testFulSpermImage')  # pool size to store fake samples
+py.arg('--fileExtension', type=str, default='png')  # pool size to store fake samples
 args = py.args()
 
 # output_dir
-output_dir = py.join('output', args.dataset)
+output_dir = py.join('output', args.output_dir)
 py.mkdir(output_dir)
 
 # save settings
@@ -60,7 +59,7 @@ B2A_pool = data.ItemPool(args.pool_size)
 
 A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA), '*.'+args.fileExtension)
 B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtension)
-A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, args.batch_size, args.load_size, args.crop_size, training=False, repeat=True)
+A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=True)
 
 
 # ==============================================================================
@@ -87,7 +86,7 @@ D_optimizer = keras.optimizers.Adam(learning_rate=D_lr_scheduler, beta_1=args.be
 # =                                 train step                                 =
 # ==============================================================================
 
-@tf.function
+#@tf.function
 def train_G(A, B):
     with tf.GradientTape() as t:
         A2B = G_A2B(A, training=True)
@@ -214,11 +213,13 @@ with train_summary_writer.as_default():
             tl.summary({'learning rate': G_lr_scheduler.current_learning_rate}, step=G_optimizer.iterations, name='learning rate')
 
             # sample
-            if G_optimizer.iterations.numpy() % 10 == 0:
+            if G_optimizer.iterations.numpy() % 100 == 0:
                 A, B = next(test_iter)
                 A2B, B2A, A2B2A, B2A2B = sample(A, B)
                 img = im.immerge(np.concatenate([A, A2B, A2B2A, B, B2A, B2A2B], axis=0), n_rows=2)
                 im.imwrite(img, py.join(sample_dir, 'iter-%09d.jpg' % G_optimizer.iterations.numpy()))
-
+            # if G_optimizer.iterations.numpy() > 5000:
+            #     if G_optimizer.iterations.numpy() % 250 == 0:
+            #             print('Debug')
         # save checkpoint
         checkpoint.save(ep)

@@ -13,16 +13,23 @@ def make_dataset(img_paths, batch_size, load_size, crop_size, training, drop_rem
     if training:
         @tf.function
         def _map_fn(img):  # preprocessing
+            if channels == 1:
+                img = tf.image.rgb_to_grayscale(img)
             img = tf.image.random_flip_left_right(img)
             img = tf.image.resize(img, [load_size, load_size])
             img = tf.image.random_crop(img, [crop_size, crop_size, tf.shape(img)[-1]])
             img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
             img = img * 2 - 1
+            img = tf.clip_by_value(img, -0.99, 0.99)
+
             return img
     else:
         @tf.function
         def _map_fn(img):  # preprocessing
-            img = tf.image.resize(img, [crop_size, crop_size])  # or img = tf.image.resize(img, [load_size, load_size]); img = tl.center_crop(img, crop_size)
+            if channels == 1:
+                img = tf.image.rgb_to_grayscale(img)
+            img = tf.image.resize(img, [crop_size,
+                                        crop_size])  # or img = tf.image.resize(img, [load_size, load_size]); img = tl.center_crop(img, crop_size)
             img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
             img = img * 2 - 1
             return img
@@ -120,7 +127,7 @@ def make_datasetAugment(img_paths, batch_size, training, drop_remainder=True, sh
                                        repeat=repeat,
                                        channels=channels)
 
-def make_zip_dataset(A_img_paths, B_img_paths, batch_size, load_size, crop_size, training, shuffle=True, repeat=False):
+def make_zip_dataset(A_img_paths, B_img_paths, batch_size, load_size, crop_size, training, shuffle=True, repeat=False, channels=3):
     # zip two datasets aligned by the longer one
     if repeat:
         A_repeat = B_repeat = None  # cycle both
@@ -132,8 +139,8 @@ def make_zip_dataset(A_img_paths, B_img_paths, batch_size, load_size, crop_size,
             A_repeat = None  # cycle the shorter one
             B_repeat = 1
 
-    A_dataset = make_dataset(A_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=shuffle, repeat=A_repeat)
-    B_dataset = make_dataset(B_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=shuffle, repeat=B_repeat)
+    A_dataset = make_dataset(A_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=shuffle, repeat=A_repeat, channels=channels)
+    B_dataset = make_dataset(B_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=shuffle, repeat=B_repeat, channels=channels)
 
     A_B_dataset = tf.data.Dataset.zip((A_dataset, B_dataset))
     len_dataset = max(len(A_img_paths), len(B_img_paths)) // batch_size

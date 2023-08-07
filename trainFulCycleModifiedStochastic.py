@@ -11,21 +11,21 @@ import tqdm
 
 import data
 import module
-import moduleModified
+import moduleStochastic
 
 # ==============================================================================
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--output_dir', default='BezierImage2SpermImageConditioned2')
+py.arg('--output_dir', default='BezierImage2SpermImageConditionedStochastic')
 py.arg('--dataset', default='FulBezierSplines2FulSperm')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size
 py.arg('--crop_size', type=int, default=256)  # then crop to this size
-py.arg('--batch_size', type=int, default=1)
+py.arg('--batch_size', type=int, default=2)
 py.arg('--epochs', type=int, default=200)
 py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
-py.arg('--lr', type=float, default=0.0002)
+py.arg('--lr', type=float, default=0.0005)
 py.arg('--beta_1', type=float, default=0.5)
 py.arg('--adversarial_loss_mode', default='lsgan', choices=['gan', 'hinge_v1', 'hinge_v2', 'lsgan', 'wgan'])
 py.arg('--gradient_penalty_mode', default='none', choices=['none', 'dragan', 'wgan-gp'])
@@ -41,7 +41,6 @@ py.arg('--fileExtension', type=str, default='png')  # pool size to store fake sa
 args = py.args()
 
 channels = 3
-
 # output_dir
 output_dir = py.join('output', args.output_dir)
 py.mkdir(output_dir)
@@ -63,18 +62,18 @@ B2A_pool = data.ItemPool(args.pool_size)
 
 A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA), '*.'+args.fileExtension)
 B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtension)
-A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=True, channels=channels)
+A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, args.batch_size, args.load_size, args.crop_size, training=False, repeat=True, channels=channels)
 
 
 # ==============================================================================
 # =                                   models                                   =
 # ==============================================================================
 
-G_A2B_Enc = moduleModified.ForwardGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
-G_A2B_Dec = moduleModified.ForwardGeneratorDecoder(input_shape=G_A2B_Enc.output_shape[0][1:], output_channels=channels)
+G_A2B_Enc = moduleStochastic.ForwardGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
+G_A2B_Dec = moduleStochastic.ForwardGeneratorDecoder(input_shape=(*G_A2B_Enc.output_shape[1:3], G_A2B_Enc.output_shape[3]//2), output_channels=channels)
 
-G_B2A_Enc = moduleModified.BackwardGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
-G_B2A_Dec = moduleModified.BackwardGeneratorDecoder(input_shape=G_A2B_Enc.output_shape[1:], output_channels=channels)
+G_B2A_Enc = moduleStochastic.BackwardGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
+G_B2A_Dec = moduleStochastic.BackwardGeneratorDecoder(input_shape=(*G_A2B_Enc.output_shape[1:3], G_A2B_Enc.output_shape[3]//2), output_channels=channels)
 
 D_A = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, channels))
 D_B = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, channels))
@@ -95,33 +94,58 @@ D_optimizer = keras.optimizers.Adam(learning_rate=D_lr_scheduler, beta_1=args.be
 
 def G_A2B(A, codes, training=True):
     A_latent = G_A2B_Enc(A, training=training)
-    A2B = G_A2B_Dec([A_latent, codes], training=training)
-    return A2B, A_latent
+    A_latent_u, A_latent_logvar = tf.split(A_latent, 2, axis=-1)
+    latent = reparametrize(A_latent_u, A_latent_logvar)
+    A2B = G_A2B_Dec([latent, codes], training=training)
+    return A2B, latent
 
 def G_B2A(B, training=True):
     B_latent, B_code = G_B2A_Enc(B, training=training)
-    B2A = G_B2A_Dec(B_latent, training=training)
-    return B2A, B_latent, B_code
+    B_latent_u, B_latent_logvar = tf.split(B_latent, 2, axis=-1)
+    B_code_u, B_code_logvar = tf.split(B_code, 2, axis=-1)
+    latent = reparametrize(B_latent_u, B_latent_logvar)
+    B2A = G_B2A_Dec(latent, training=training)
+    return B2A, latent, B_code_u, B_code_logvar
 
 def G_A2A(A, training=True):
     A_latent = G_A2B_Enc(A, training=training)
-    A2A = G_B2A_Dec(A_latent, training=training)
+    A_latent_u, A_latent_logvar = tf.split(A_latent, 2, axis=-1)
+    latent = reparametrize(A_latent_u, A_latent_logvar)
+    A2A = G_B2A_Dec(latent, training=training)
     return A2A
 
 def G_B2B(B, training=True):
     B_latent, B_code = G_B2A_Enc(B, training=training)
-    B2B = G_A2B_Dec([B_latent, B_code], training=training)
+    B_latent_u, B_latent_logvar = tf.split(B_latent, 2, axis=-1)
+    B_code_u, B_code_logvar = tf.split(B_code, 2, axis=-1)
+    latent = reparametrize(B_latent_u, B_latent_logvar)
+    codes = reparametrize(B_code_u, B_code_logvar)
+    B2B = G_A2B_Dec([latent, codes], training=training)
     return B2B
+
+@tf.function
+def reparametrize(u, logvar):
+    eps = tf.random.normal(shape=u.shape)
+    return eps * tf.exp(logvar * .5) + u
+
+@tf.function
+def log_normal_pdf(sample, mean, logvar, raxis=1):
+  log2pi = tf.math.log(2. * np.pi)
+  return tf.reduce_sum(
+      -.5 * ((sample - mean) ** 2. * tf.exp(-logvar) + logvar + log2pi),axis=raxis)
+
 
 # @tf.function
 def train_G(A, B):
     with tf.GradientTape() as t:
         # Standard Cycle-GAN
-        B2A, B_latent, B_code = G_B2A(B, training=True)
-        rand_code = tf.random.normal(shape=B_code.shape)
+        B2A, B_latent, B_code_u, B_code_logvar = G_B2A(B, training=True)
+        rand_code = tf.random.normal(shape=B_code_u.shape)
         A2B, A_latent = G_A2B(A, rand_code, training=True)
 
-        A2B2A, A2B2A_latent, A2B2A_code = G_B2A(A2B, training=True)
+        A2B2A, A2B2A_latent, A2B2A_code_u, A2B2A_code_logvar = G_B2A(A2B, training=True)
+        B_code = reparametrize(B_code_u, B_code_logvar)
+        A2B2A_code = reparametrize(A2B2A_code_u, A2B2A_code_logvar)
 
         B2A2B, B2A2B_latent = G_A2B(B2A, B_code, training=True)
 
@@ -141,15 +165,21 @@ def train_G(A, B):
         A2A_id_loss = identity_loss_fn(A, A2A)
         B2B_id_loss = identity_loss_fn(B, B2B)
 
-        G_loss = (A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight # \
-                   # + (A2A_id_loss + B2B_id_loss) * args.identity_loss_weight
+        G_loss = (A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight + (
+                    A2A_id_loss + B2B_id_loss) * args.identity_loss_weight
 
         # Modification
         # Identity in splines latent spaces
-        # spline_latent_loss = tf.reduce_mean(
-        #    tf.losses.mse(A_latent, A2B2A_latent) + tf.losses.mse(B_latent, B2A2B_latent))
+        spline_latent_loss = tf.reduce_mean(
+            tf.losses.mse(A_latent, A2B2A_latent) + tf.losses.mse(B_latent, B2A2B_latent))
 
-        # G_loss += spline_latent_loss
+        # Maintain code_u and code_logvar as a normal distribution N(0, 1)
+        logpz = tf.reduce_mean(log_normal_pdf(B_code, 0., 0.)) + \
+                tf.reduce_mean(log_normal_pdf(A2B2A_code, 0., 0.)) + \
+                tf.reduce_mean(log_normal_pdf(A_latent, 0., 0.)) + \
+                tf.reduce_mean(log_normal_pdf(B_latent, 0., 0.)) # mean = 0 and logvar = 0 equivalent to var = 1
+
+        G_loss += spline_latent_loss - logpz
 
     G_grad = t.gradient(G_loss, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2A_Enc.trainable_variables + G_B2A_Dec.trainable_variables)
     G_optimizer.apply_gradients(zip(G_grad, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2A_Enc.trainable_variables + G_B2A_Dec.trainable_variables))
@@ -159,8 +189,9 @@ def train_G(A, B):
                       'A2B2A_cycle_loss': A2B2A_cycle_loss,
                       'B2A2B_cycle_loss': B2A2B_cycle_loss,
                       'A2A_id_loss': A2A_id_loss,
-                      'B2B_id_loss': B2B_id_loss} #,
-                      #'spline_latent_loss': spline_latent_loss}
+                      'B2B_id_loss': B2B_id_loss,
+                      'spline_latent_loss': spline_latent_loss} #,
+                      # 'logpz': tf.reduce_sum(logpz)}
 
 
 @tf.function
@@ -201,11 +232,11 @@ def train_step(A, B):
 
 @tf.function
 def sample(A, B):
-    B2A, B_latent, B_code = G_B2A(B, training=False)
-    eps = tf.random.normal(shape=B_code.shape)
+    B2A, B_latent, B_code_u, B_code_logvar = G_B2A(B, training=False)
+    eps = tf.random.normal(shape=B_code_u.shape)
     A2B, A_latent = G_A2B(A, eps, training=False)
-    A2B2A, _, _ = G_B2A(A2B, training=False)
-    B2A2B, _ = G_A2B(B2A, B_code, training=False)
+    A2B2A, _, _, _ = G_B2A(A2B, training=False)
+    B2A2B, _ = G_A2B(B2A, reparametrize(B_code_u, B_code_logvar), training=False)
     A2A = G_A2A(A, training=False)
     B2B = G_B2B(B, training=False)
     return A2B, B2A, A2B2A, B2A2B, A2A, B2B
@@ -262,32 +293,32 @@ with train_summary_writer.as_default():
             tl.summary({'learning rate': G_lr_scheduler.current_learning_rate}, step=G_optimizer.iterations, name='learning rate')
 
             # sample
-            if G_optimizer.iterations.numpy() % 250 == 0:
+            if G_optimizer.iterations.numpy() % 1 == 0:
                 A, B = next(test_iter)
                 A2B, B2A, A2B2A, B2A2B, A2A, B2B = sample(A, B)
-                # img =  im.immerge(np.concatenate([tf.image.grayscale_to_rgb(A[0]),
-                #                                   tf.image.grayscale_to_rgb(A2B[0]),
-                #                                   tf.image.grayscale_to_rgb(A2B2A[0]),
-                #                                   tf.image.grayscale_to_rgb(A2A[0]),
-                #                                   tf.image.grayscale_to_rgb(B[0]),
-                #                                   tf.image.grayscale_to_rgb(B2A[0]),
-                #                                   tf.image.grayscale_to_rgb(B2A2B[0]),
-                #                                   tf.image.grayscale_to_rgb(B2B[0])], axis=0), n_rows=2)
-                img = im.immerge(np.concatenate([A,
-                                                  A2B,
-                                                  A2B2A,
-                                                  A2A,
-                                                  B,
-                                                  B2A,
-                                                  B2A2B,
-                                                  B2B], axis=0), n_rows=2)
+                # img =  im.immerge(np.concatenate([tf.image.grayscale_to_rgb(A[:2]),
+                #                                   tf.image.grayscale_to_rgb(A2B[:2]),
+                #                                   tf.image.grayscale_to_rgb(A2B2A[:2]),
+                #                                   tf.image.grayscale_to_rgb(A2A[:2]),
+                #                                   tf.image.grayscale_to_rgb(B[:2]),
+                #                                   tf.image.grayscale_to_rgb(B2A[:2]),
+                #                                   tf.image.grayscale_to_rgb(B2A2B[:2]),
+                #                                   tf.image.grayscale_to_rgb(B2B[:2])], axis=0), n_rows=2)
+                img = im.immerge(np.concatenate([A[0],
+                                                 A2B[0],
+                                                 A2B2A[0],
+                                                 A2A[0],
+                                                 B[0],
+                                                 B2A[0],
+                                                 B2A2B[0],
+                                                 B2B[0]], axis=0), n_rows=2)
 
 
                 im.imwrite(img, py.join(sample_dir, 'iter-%09d.jpg' % G_optimizer.iterations.numpy()))
                 if len(img.shape) == 3:
                     img = tf.expand_dims(img, axis=0)
-                tl.summary_img({'images': img}, step=G_optimizer.iterations,
-                               name='images')
+                # tl.summary_img({'images': img}, step=G_optimizer.iterations,
+                #                name='images')
 
         # save checkpoint
         checkpoint.save(ep)
