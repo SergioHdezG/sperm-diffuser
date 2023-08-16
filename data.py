@@ -13,8 +13,6 @@ def make_dataset(img_paths, batch_size, load_size, crop_size, training, drop_rem
     if training:
         @tf.function
         def _map_fn(img):  # preprocessing
-            if channels == 1:
-                img = tf.image.rgb_to_grayscale(img)
             img = tf.image.random_flip_left_right(img)
             img = tf.image.resize(img, [load_size, load_size])
             img = tf.image.random_crop(img, [crop_size, crop_size, tf.shape(img)[-1]])
@@ -26,8 +24,6 @@ def make_dataset(img_paths, batch_size, load_size, crop_size, training, drop_rem
     else:
         @tf.function
         def _map_fn(img):  # preprocessing
-            if channels == 1:
-                img = tf.image.rgb_to_grayscale(img)
             img = tf.image.resize(img, [crop_size,
                                         crop_size])  # or img = tf.image.resize(img, [load_size, load_size]); img = tl.center_crop(img, crop_size)
             img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
@@ -41,6 +37,61 @@ def make_dataset(img_paths, batch_size, load_size, crop_size, training, drop_rem
                                        shuffle=shuffle,
                                        repeat=repeat,
                                        channels=channels)
+
+def make_seed_dataset(img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=True, repeat=1, channels=3):
+    if training:
+        @tf.function
+        def _map_fn(img):  # preprocessing
+            img = tf.image.random_flip_left_right(img, seed=0)
+            img = tf.image.resize(img, [crop_size, crop_size])
+            # img = tf.image.random_crop(img, [crop_size, crop_size, tf.shape(img)[-1]], seed=0)
+            img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            img = img * 2 - 1
+            img = tf.clip_by_value(img, -0.99, 0.99)
+
+            return img
+    else:
+        @tf.function
+        def _map_fn(img):  # preprocessing
+            img = tf.image.resize(img, [crop_size,
+                                        crop_size])  # or img = tf.image.resize(img, [load_size, load_size]); img = tl.center_crop(img, crop_size)
+            img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            img = img * 2 - 1
+            return img
+
+    return tl.disk_image_batch_dataset(img_paths,
+                                       batch_size,
+                                       drop_remainder=drop_remainder,
+                                       map_fn=_map_fn,
+                                       shuffle=shuffle,
+                                       repeat=repeat,
+                                       channels=channels)
+
+def make_mask_seed_dataset(img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=True, repeat=1, channels=3):
+    if training:
+        @tf.function
+        def _map_fn(img):  # preprocessing
+            img = tf.image.random_flip_left_right(img, seed=0)
+            img = tf.image.resize(img, [crop_size, crop_size])
+            # img = tf.image.random_crop(img, [crop_size, crop_size, tf.shape(img)[-1]], seed=0)
+            img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            return img
+    else:
+        @tf.function
+        def _map_fn(img):  # preprocessing
+            img = tf.image.resize(img, [crop_size,
+                                        crop_size])  # or img = tf.image.resize(img, [load_size, load_size]); img = tl.center_crop(img, crop_size)
+            img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            return img
+
+    return tl.disk_image_batch_dataset(img_paths,
+                                       batch_size,
+                                       drop_remainder=drop_remainder,
+                                       map_fn=_map_fn,
+                                       shuffle=shuffle,
+                                       repeat=repeat,
+                                       channels=channels)
+
 
 def make_datasetSplines(spl_path, batch_size,  scaler, training, drop_remainder=True, shuffle=True, repeat=1):
     def augment_splines(coordinates):
@@ -143,6 +194,19 @@ def make_zip_dataset(A_img_paths, B_img_paths, batch_size, load_size, crop_size,
     B_dataset = make_dataset(B_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=shuffle, repeat=B_repeat, channels=channels)
 
     A_B_dataset = tf.data.Dataset.zip((A_dataset, B_dataset))
+    len_dataset = max(len(A_img_paths), len(B_img_paths)) // batch_size
+
+    return A_B_dataset, len_dataset
+
+def make_zip_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths, batch_size, load_size, crop_size, training, shuffle=False, repeat=False, channels=3):
+    # zip two datasets aligned by the longer one
+
+    A_dataset = make_seed_dataset(A_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=False, channels=channels)
+    B_dataset = make_seed_dataset(B_img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=False, channels=channels)
+    A_mask_dataset = make_mask_seed_dataset(A_mask_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=False, channels=channels)
+    B_mask_dataset = make_mask_seed_dataset(B_mask_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=False, channels=channels)
+
+    A_B_dataset = tf.data.Dataset.zip((A_dataset, B_dataset, A_mask_dataset, B_mask_dataset))
     len_dataset = max(len(A_img_paths), len(B_img_paths)) // batch_size
 
     return A_B_dataset, len_dataset

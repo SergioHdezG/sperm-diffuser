@@ -17,8 +17,8 @@ import moduleModified
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--output_dir', default='BezierImage2SpermImageConditioned')
-py.arg('--dataset', default='FulBezierSplines2FulSperm')
+py.arg('--output_dir', default='BezierImage2SpermImageMaskedPaired2')
+py.arg('--dataset', default='FulBezier2FulSpermMasked')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size
 py.arg('--crop_size', type=int, default=256)  # then crop to this size
@@ -33,12 +33,17 @@ py.arg('--reconstruction_loss_mode', default='none', choices=['none', 'synth_bce
 py.arg('--gradient_penalty_weight', type=float, default=10.0)
 py.arg('--cycle_loss_weight', type=float, default=10.0)
 py.arg('--identity_loss_weight', type=float, default=0.0)
-py.arg('--normal_prob_loss_weight', type=float, default=0.01)
+py.arg('--normal_prob_loss_weight', type=float, default=0.0001)
 py.arg('--pool_size', type=int, default=50)  # pool size to store fake samples
 py.arg('--trainA', type=str, default='trainFulBezierImage')  # pool size to store fake samples
 py.arg('--trainB', type=str, default='trainFulSpermImage')  # pool size to store fake samples
+py.arg('--trainMaskA', type=str, default='trainSynthMask')  # pool size to store fake samples
+py.arg('--trainMaskB', type=str, default='trainRealMask')  # pool size to store fake samples
+
 py.arg('--testA', type=str, default='testFulBezierImage')  # pool size to store fake samples
 py.arg('--testB', type=str, default='testFulSpermImage')  # pool size to store fake samples
+py.arg('--testMaskA', type=str, default='testSynthMask')  # pool size to store fake samples
+py.arg('--testMaskB', type=str, default='testRealMask')  # pool size to store fake samples
 py.arg('--fileExtension', type=str, default='png')  # pool size to store fake samples
 args = py.args()
 
@@ -58,14 +63,18 @@ py.args_to_yaml(py.join(output_dir, 'settings.yml'), args)
 
 A_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainA), '*.'+args.fileExtension)
 B_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainB), '*.'+args.fileExtension)
-A_B_dataset, len_dataset = data.make_zip_dataset(A_img_paths, B_img_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False, channels=channels)
+A_mask_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskA), '*.'+args.fileExtension)
+B_mask_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskB), '*.'+args.fileExtension)
+A_B_dataset, len_dataset = data.make_zip_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False, channels=channels)
 
 A2B_pool = data.ItemPool(args.pool_size)
 B2A_pool = data.ItemPool(args.pool_size)
 
 A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA), '*.'+args.fileExtension)
 B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtension)
-A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=True, channels=channels)
+A_mask_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskA), '*.'+args.fileExtension)
+B_mask_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskB), '*.'+args.fileExtension)
+A_B_dataset_test, _ = data.make_zip_dataset_masked(A_img_paths_test, B_img_paths_test, A_mask_paths_test, B_mask_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=True, channels=channels)
 
 
 # ==============================================================================
@@ -87,11 +96,13 @@ if args.reconstruction_loss_mode == 'synth_bce':
     identity_loss_fn_A = tf.losses.BinaryCrossentropy()
     cycle_loss_fn_B = tf.losses.MeanAbsoluteError()
     identity_loss_fn_B = tf.losses.MeanAbsoluteError()
+    reconstruction_mask_loss = tf.losses.MeanAbsoluteError()
 else:
     cycle_loss_fn_A = tf.losses.MeanAbsoluteError()
     identity_loss_fn_A = tf.losses.MeanAbsoluteError()
     cycle_loss_fn_B = tf.losses.MeanAbsoluteError()
     identity_loss_fn_B = tf.losses.MeanAbsoluteError()
+    reconstruction_mask_loss = tf.losses.MeanAbsoluteError()
 
 G_lr_scheduler = module.LinearDecay(args.lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
 D_lr_scheduler = module.LinearDecay(args.lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
@@ -145,7 +156,7 @@ def split_mean_var(input):
     return samples
 
 @tf.function
-def train_G(A, B):
+def train_G(A, B, A_mask, B_mask):
     with tf.GradientTape() as t:
         # Standard Cycle-GAN
         B2A, B_latent, B_code = G_B2A(B, training=True)
@@ -164,18 +175,22 @@ def train_G(A, B):
         B2B = G_B2B(B_latent, B_code, training=True)
 
         # Standard Cycle-GAN
-        A2B_d_logits = D_B(A2B, training=True)
-        B2A_d_logits = D_A(B2A, training=True)
+        # A2B_d_logits = D_B(A2B, training=True)
+        # B2A_d_logits = D_A(B2A, training=True)
+        A2B_d_logits = D_B(((A2B + 1) / 2) * A_mask, training=True)
+        B2A_d_logits = D_A(((B2A + 1) / 2) * A_mask, training=True)
 
         A2B_g_loss = g_loss_fn(A2B_d_logits)
         B2A_g_loss = g_loss_fn(B2A_d_logits)
-        A2B2A_cycle_loss = cycle_loss_fn_A(A, A2B2A)
-        B2A2B_cycle_loss = cycle_loss_fn_B(B, B2A2B)
-        A2A_id_loss = identity_loss_fn_A(A, A2A)
-        B2B_id_loss = identity_loss_fn_B(B, B2B)
+        A2B2A_cycle_loss = cycle_loss_fn_A(((A + 1) / 2) * A_mask, ((A2B2A + 1) / 2) * A_mask)
+        B2A2B_cycle_loss = cycle_loss_fn_B(((B + 1) / 2) * A_mask, ((B2A2B + 1) / 2) * A_mask)
+        A2A_id_loss = identity_loss_fn_A(((A + 1) / 2) * A_mask, ((A2A + 1) / 2) * A_mask)
+        B2B_id_loss = identity_loss_fn_B(((B + 1) / 2) * A_mask, ((B2B + 1) / 2) * A_mask)
+        A_mask_loss = reconstruction_mask_loss(((A+1)/2)*A_mask, ((B2A+1)/2)*A_mask) + reconstruction_mask_loss(((B+1)/2)*A_mask, ((A2B+1)/2)*A_mask)
+        B_mask_loss = reconstruction_mask_loss(((B+1)/2)*B_mask, ((B2B+1)/2)*B_mask) + reconstruction_mask_loss(((A+1)/2)*A_mask, ((A2A+1)/2)*A_mask)
 
-        G_loss = (0.1*A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + 0.1*B2A2B_cycle_loss) * args.cycle_loss_weight \
-                    + (A2A_id_loss + 0.1*B2B_id_loss) * args.identity_loss_weight
+        G_loss = (A2B_g_loss + B2A_g_loss) + (A2B2A_cycle_loss + B2A2B_cycle_loss) * args.cycle_loss_weight \
+                    + (A2A_id_loss + B2B_id_loss) #* args.identity_loss_weight + A_mask_loss + B_mask_loss
 
         # Modification
         # Identity in splines latent spaces
@@ -202,20 +217,29 @@ def train_G(A, B):
                       'B2A2B_cycle_loss': B2A2B_cycle_loss,
                       'A2A_id_loss': A2A_id_loss,
                       'B2B_id_loss': B2B_id_loss,
-                      'logpz': logpz} #,
+                      'logpz': logpz,
+                      'A_mask_loss': A_mask_loss,
+                      'B_mask_loss': B_mask_loss} #,
                       #'spline_latent_loss': spline_latent_loss}
 
 
 @tf.function
-def train_D(A, B, A2B, B2A):
+def train_D(A, B, A2B, B2A,  A_mask, B_mask):
     with tf.GradientTape() as t:
-        A_d_logits = D_A(A, training=True)
-        B2A_d_logits = D_A(B2A, training=True)
-        B_d_logits = D_B(B, training=True)
-        A2B_d_logits = D_B(A2B, training=True)
+        # A_d_logits = D_A(A, training=True)
+        # B2A_d_logits = D_A(B2A, training=True)
+        # B_d_logits = D_B(B, training=True)
+        # A2B_d_logits = D_B(A2B, training=True)
 
-        A_d_loss, B2A_d_loss = d_loss_fn(A_d_logits, B2A_d_logits)
-        B_d_loss, A2B_d_loss = d_loss_fn(B_d_logits, A2B_d_logits)
+        A_mask_d_logits = D_A(((A + 1) / 2) * A_mask, training=True)
+        B2A_mask_d_logits = D_A(((B2A + 1) / 2) * A_mask, training=True)
+        B_d_mask_logits = D_B(((B + 1) / 2) * A_mask, training=True)
+        A2B_mask_d_logits = D_B(((A2B + 1) / 2) * A_mask, training=True)
+
+        # A_d_loss, B2A_d_loss = d_loss_fn(A_d_logits, B2A_d_logits)
+        # B_d_loss, A2B_d_loss = d_loss_fn(B_d_logits, A2B_d_logits)
+        A_d_loss, B2A_d_loss = d_loss_fn(A_mask_d_logits, B2A_mask_d_logits)
+        B_d_loss, A2B_d_loss = d_loss_fn(B_d_mask_logits, A2B_mask_d_logits)
         D_A_gp = gan.gradient_penalty(functools.partial(D_A, training=True), A, B2A, mode=args.gradient_penalty_mode)
         D_B_gp = gan.gradient_penalty(functools.partial(D_B, training=True), B, A2B, mode=args.gradient_penalty_mode)
 
@@ -230,14 +254,14 @@ def train_D(A, B, A2B, B2A):
             'D_B_gp': D_B_gp}
 
 
-def train_step(A, B):
-    A2B, B2A, G_loss_dict = train_G(A, B)
+def train_step(A, B, A_mask, B_mask):
+    A2B, B2A, G_loss_dict = train_G(A, B, A_mask, B_mask)
 
     # cannot autograph `A2B_pool`
     A2B = A2B_pool(A2B)  # or A2B = A2B_pool(A2B.numpy()), but it is much slower
     B2A = B2A_pool(B2A)  # because of the communication between CPU and GPU
 
-    D_loss_dict = train_D(A, B, A2B, B2A)
+    D_loss_dict = train_D(A, B, A2B, B2A, A_mask, B_mask)
 
     return G_loss_dict, D_loss_dict
 
@@ -297,8 +321,8 @@ with train_summary_writer.as_default():
         ep_cnt.assign_add(1)
 
         # train for an epoch
-        for A, B in tqdm.tqdm(A_B_dataset, desc='Inner Epoch Loop', total=len_dataset):
-            G_loss_dict, D_loss_dict = train_step(A, B)
+        for A, B, A_mask, B_mask in tqdm.tqdm(A_B_dataset, desc='Inner Epoch Loop', total=len_dataset):
+            G_loss_dict, D_loss_dict = train_step(A, B, A_mask, B_mask)
 
             # # summary
             tl.summary(G_loss_dict, step=G_optimizer.iterations, name='G_losses')
@@ -307,7 +331,12 @@ with train_summary_writer.as_default():
 
             # sample
             if G_optimizer.iterations.numpy() % 250 == 0:
-                A, B = next(test_iter)
+                try:
+                    A, B, A_mask, B_mask = next(test_iter)
+                except StopIteration:
+                    test_iter = iter(A_B_dataset_test)
+                    A, B, A_mask, B_mask = next(test_iter)
+
                 A2B, B2A, A2B2A, B2A2B, A2A, B2B = sample(A, B)
                 img = im.immerge(np.concatenate([A,
                                                   A2B,

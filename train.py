@@ -20,7 +20,7 @@ py.arg('--dataset', default='FulBezierSplines2FulSperm')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=350)  # load image to this size
 py.arg('--crop_size', type=int, default=256)  # then crop to this size
-py.arg('--batch_size', type=int, default=4)
+py.arg('--batch_size', type=int, default=2)
 py.arg('--epochs', type=int, default=200)
 py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
 py.arg('--lr', type=float, default=0.0002)
@@ -37,6 +37,7 @@ py.arg('--testA', type=str, default='testFulBezierImage')  # pool size to store 
 py.arg('--testB', type=str, default='testFulSpermImage')  # pool size to store fake samples
 py.arg('--fileExtension', type=str, default='png')  # pool size to store fake samples
 args = py.args()
+
 
 # output_dir
 output_dir = py.join('output', args.output_dir)
@@ -86,7 +87,7 @@ D_optimizer = keras.optimizers.Adam(learning_rate=D_lr_scheduler, beta_1=args.be
 # =                                 train step                                 =
 # ==============================================================================
 
-#@tf.function
+@tf.function
 def train_G(A, B):
     with tf.GradientTape() as t:
         A2B = G_A2B(A, training=True)
@@ -213,7 +214,7 @@ with train_summary_writer.as_default():
             tl.summary({'learning rate': G_lr_scheduler.current_learning_rate}, step=G_optimizer.iterations, name='learning rate')
 
             # sample
-            if G_optimizer.iterations.numpy() % 100 == 0:
+            if G_optimizer.iterations.numpy() % 250 == 0:
                 A, B = next(test_iter)
                 A2B, B2A, A2B2A, B2A2B = sample(A, B)
                 img = im.immerge(np.concatenate([A, A2B, A2B2A, B, B2A, B2A2B], axis=0), n_rows=2)

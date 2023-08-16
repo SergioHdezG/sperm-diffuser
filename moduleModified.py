@@ -217,43 +217,23 @@ def ForwardGeneratorEncoder(input_shape=(256, 256, 1),
     h = tf.nn.relu(h)
 
     # 2
-    # for _ in range(n_downsamplings):
-    dim *= 2
-    h1 = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h)
-    h1 = Norm()(h1)
-    h1 = tf.nn.relu(h1)
+    for _ in range(n_downsamplings):
+        dim *= 2
+        h = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h)
+        h = Norm()(h)
+        h = tf.nn.relu(h)
 
-    dim *= 2
-    h2 = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h1)
-    h2 = Norm()(h2)
-    h2 = tf.nn.relu(h2)
-
-    dim *= 2
-    h3 = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h2)
-    h3 = Norm()(h3)
-    h3 = tf.nn.relu(h3)
-
-    dim *= 2
-    h4 = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h3)
-    h4 = Norm()(h4)
-    h4 = tf.nn.relu(h4)
-
-    h = h4
     # 3
     for _ in range(n_blocks):
         h = _residual_block(h, Norm)
 
-    res_latent = h
-
-    h = keras.layers.Conv2D(8, 5, strides=2, padding='same', use_bias=False)(h)
-    h = Norm()(h)
-    h = tf.nn.relu(h)
+    h = keras.layers.Conv2D(16, 5, strides=2, padding='same', use_bias=False)(h)
 
     latent = h
 
-    return keras.Model(inputs=inputs, outputs=[latent, res_latent, h1, h2, h3, h4])
+    return keras.Model(inputs=inputs, outputs=latent)
 
-def ForwardGeneratorDecoder(input_shape=(8, 8, 128),
+def ForwardGeneratorDecoder(input_shape=(8, 8, 8),
                     output_channels=1,
                     dim=512,
                     n_downsamplings=4,
@@ -264,11 +244,6 @@ def ForwardGeneratorDecoder(input_shape=(8, 8, 128),
     # 0
     latent = keras.Input(shape=input_shape)
     style_code = keras.Input(shape=input_shape)
-    res_h4 = keras.Input(shape=(*input_shape, dim))
-    res_h3 = keras.Input(shape=(*input_shape, dim//2))
-    res_h2 = keras.Input(shape=(*input_shape, dim//4))
-    res_h1 = keras.Input(shape=(*input_shape, dim//8))
-    residual_latent = keras.Input(shape=(16, 16, dim))
 
     h_latent = _residual_block(latent, Norm)
     h_style_code = _residual_block(style_code, Norm)
@@ -279,44 +254,27 @@ def ForwardGeneratorDecoder(input_shape=(8, 8, 128),
     h = Norm()(h)
     h = tf.nn.relu(h)
 
-    h = h + residual_latent
     for _ in range(n_blocks):
         h = _residual_block(h, Norm)
 
     # 4
-    # for _ in range(n_downsamplings):
-    dim //= 2
-    h4 = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h + res_h4)
-    h4 = Norm()(h4)
-    h4 = tf.nn.relu(h4)
+    for _ in range(n_downsamplings):
+        dim //= 2
+        h = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h)
+        h = Norm()(h)
+        h = tf.nn.relu(h)
 
-    dim //= 2
-    h3 = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h4 + res_h3)
-    h3 = Norm()(h3)
-    h3 = tf.nn.relu(h3)
-
-    dim //= 2
-    h2 = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h3 + res_h2)
-    h2 = Norm()(h2)
-    h2 = tf.nn.relu(h2)
-
-    dim //= 2
-    h1 = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h2 + res_h1)
-    h1 = Norm()(h1)
-    h1 = tf.nn.relu(h1)
-
-    h = h1
     # 5
     h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], mode='REFLECT')
     h = keras.layers.Conv2D(output_channels, 7, padding='valid')(h)
     h = tf.tanh(h)
 
-    return keras.Model(inputs=[latent, style_code, residual_latent, res_h4, res_h3, res_h2, res_h1], outputs=h)
+    return keras.Model(inputs=[latent, style_code], outputs=h)
 
 def BackwardGeneratorEncoder(input_shape=(256, 256, 1),
-                    output_channels=3,
+                    output_channels=1,
                     dim=64,
-                    n_downsamplings=2,
+                    n_downsamplings=4,
                     n_blocks=4,
                     norm='instance_norm'):
     Norm = _get_norm_layer(norm)
@@ -347,18 +305,24 @@ def BackwardGeneratorEncoder(input_shape=(256, 256, 1),
     h_latent = _residual_block(h_latent, Norm)
     h_style_code =_residual_block(h_style_code, Norm)
 
+    h_latent = keras.layers.Conv2D(16, 5, strides=2, padding='same', use_bias=False)(h_latent)
+    h_style_code = keras.layers.Conv2D(16, 5, strides=2, padding='same', use_bias=False)(h_style_code)
+
     return keras.Model(inputs=inputs, outputs=[h_latent, h_style_code])
 
 def BackwardGeneratorDecoder(input_shape=(8, 8, 64),
                     output_channels=1,
                     dim=64,
-                    n_downsamplings=2,
+                    n_downsamplings=4,
                     n_blocks=4,
                     norm='instance_norm'):
     Norm = _get_norm_layer(norm)
 
     # 0
-    latent = h = keras.Input(shape=input_shape)
+    latent = keras.Input(shape=input_shape)
+
+    h = keras.layers.Conv2DTranspose(dim, 5, strides=2, padding='same', use_bias=False)(latent)
+
 
     for _ in range(n_blocks):
         h = _residual_block(h, Norm)
@@ -377,6 +341,183 @@ def BackwardGeneratorDecoder(input_shape=(8, 8, 64),
 
     return keras.Model(inputs=latent, outputs=h)
 
+
+def ForwardResidualGeneratorEncoder(input_shape=(256, 256, 1),
+                    output_channels=1,
+                    dim=64,
+                    n_downsamplings=2,
+                    n_blocks=4,
+                    norm='instance_norm'):
+    Norm = _get_norm_layer(norm)
+
+    # 0
+    h = inputs = keras.Input(shape=input_shape)
+
+    # 1
+    h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], mode='REFLECT')
+    h = keras.layers.Conv2D(dim, 7, padding='valid', use_bias=False)(h)
+    h = Norm()(h)
+    h = tf.nn.relu(h)
+
+    # 2
+    for _ in range(n_downsamplings):
+        dim *= 2
+        h = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h)
+        h = Norm()(h)
+        h = tf.nn.relu(h)
+
+    hconv = h
+    # 3
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    hres = h
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    latent = h
+
+    return keras.Model(inputs=inputs, outputs=[latent, hres, hconv, tf.repeat(inputs,64, axis=-1)])
+
+def ForwardResidualGeneratorDecoder(latent_input_shape=(8, 8, 8),
+                                    code_input_shape=(8, 8, 8),
+                                    res1_input_shape=(8, 8, 8),
+                                    res2_input_shape=(8, 8, 8),
+                                    res3_input_shape=(8, 8, 8),
+                                    output_channels=1,
+                                    dim=256,
+                                    n_downsamplings=2,
+                                    n_blocks=4,
+                                    norm='instance_norm'):
+    Norm = _get_norm_layer(norm)
+
+    # 0
+    latent = keras.Input(shape=latent_input_shape)
+    dim = latent_input_shape[-1]
+    style_code = keras.Input(shape=code_input_shape)
+
+    res1 = keras.Input(shape=res1_input_shape)
+    res2 = keras.Input(shape=res2_input_shape)
+    res3 = keras.Input(shape=res3_input_shape)
+
+
+    h_style_code = keras.layers.Conv2DTranspose(dim, 7, strides=2, padding='same', use_bias=False)(style_code)
+
+    h = latent + h_style_code
+
+
+    for _ in range(n_blocks//4):
+        h = _residual_block(h, Norm)
+
+    h = h + res1
+
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    h = h + res2
+
+    for _ in range(n_downsamplings):
+        dim //= 2
+        h = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h)
+        h = Norm()(h)
+        h = tf.nn.relu(h)
+
+    h = h + res3
+
+    # 5
+    h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], mode='REFLECT')
+    h = keras.layers.Conv2D(output_channels, 7, padding='valid')(h)
+    h = tf.tanh(h)
+
+    return keras.Model(inputs=[latent, style_code, res1, res2, res3], outputs=h)
+
+def BackwardResidualGeneratorEncoder(input_shape=(256, 256, 1),
+                    output_channels=1,
+                    dim=64,
+                    n_downsamplings=2,
+                    n_blocks=4,
+                    norm='instance_norm'):
+    Norm = _get_norm_layer(norm)
+
+    # 0
+    h = inputs = keras.Input(shape=input_shape)
+
+    # 1
+    h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], mode='REFLECT')
+    h = keras.layers.Conv2D(dim, 7, padding='valid', use_bias=False)(h)
+    h = Norm()(h)
+    h = tf.nn.relu(h)
+
+    hinput = h
+    # 2
+    for _ in range(n_downsamplings):
+        dim *= 2
+        h = keras.layers.Conv2D(dim, 3, strides=2, padding='same', use_bias=False)(h)
+        h = Norm()(h)
+        h = tf.nn.relu(h)
+
+    hconv = h
+
+    # 3
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    hres = h
+
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    h_latent = _residual_block(h, Norm)
+    h_style_code =_residual_block(h, Norm)
+
+    h_style_code = keras.layers.Conv2D(4, 5, strides=2, padding='same', use_bias=False)(h_style_code)
+
+    return keras.Model(inputs=inputs, outputs=[h_latent, h_style_code, hres, hconv,  hinput])
+
+def BackwardResidualGeneratorDecoder(latent_input_shape=(8, 8, 8),
+                                    res1_input_shape=(8, 8, 8),
+                                    res2_input_shape=(8, 8, 8),
+                                    res3_input_shape=(8, 8, 8),
+                    output_channels=1,
+                    dim=64,
+                    n_downsamplings=2,
+                    n_blocks=4,
+                    norm='instance_norm'):
+    Norm = _get_norm_layer(norm)
+    dim = latent_input_shape[-1]
+
+    # 0
+    h = latent = keras.Input(shape=latent_input_shape)
+
+    res1 = keras.Input(shape=res1_input_shape)
+    res2 = keras.Input(shape=res2_input_shape)
+    res3 = keras.Input(shape=res3_input_shape)
+
+
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    h = h + res1
+
+    for _ in range(n_blocks//2):
+        h = _residual_block(h, Norm)
+
+    h = h + res2
+    # 4
+    for _ in range(n_downsamplings):
+        dim //= 2
+        h = keras.layers.Conv2DTranspose(dim, 3, strides=2, padding='same', use_bias=False)(h)
+        h = Norm()(h)
+        h = tf.nn.relu(h)
+
+    h = h + res3
+
+    # 5
+    h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], mode='REFLECT')
+    h = keras.layers.Conv2D(output_channels, 7, padding='valid')(h)
+    h = tf.tanh(h)
+
+    return keras.Model(inputs=[latent, res1, res2, res3], outputs=h)
 # ==============================================================================
 # =                          learning rate scheduler                           =
 # ==============================================================================
