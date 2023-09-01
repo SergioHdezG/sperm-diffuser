@@ -17,7 +17,7 @@ import moduleModified
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--output_dir', default='BezierImage2SpermImageMaskedPaired2')
+py.arg('--output_dir', default='BezierImage2SpermImageMaskedPaired5')
 py.arg('--dataset', default='FulBezier2FulSpermMasked')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size

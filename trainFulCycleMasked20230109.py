@@ -10,21 +10,21 @@ import tf2gan as gan
 import tqdm
 
 import data
-import moduleHalfCycle
 import module
+import moduleModified
 
 # ==============================================================================
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--output_dir', default='BezierImage2SpermImageHalfCycle7')
+py.arg('--output_dir', default='BezierImage2SpermImageMaskedNoD_A')
 py.arg('--dataset', default='FulBezier2FulSpermMasked')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size
 py.arg('--crop_size', type=int, default=256)  # then crop to this size
 py.arg('--batch_size', type=int, default=2)
-py.arg('--epochs', type=int, default=500)
-py.arg('--epoch_decay', type=int, default=300)  # epoch to start decaying learning rate
+py.arg('--epochs', type=int, default=200)
+py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
 py.arg('--G_lr', type=float, default=0.0002)
 py.arg('--D_lr', type=float, default=0.0002)
 py.arg('--beta_1', type=float, default=0.5)
@@ -34,7 +34,7 @@ py.arg('--reconstruction_loss_mode', default='none', choices=['none', 'synth_bce
 py.arg('--gradient_penalty_weight', type=float, default=10.0)
 py.arg('--cycle_loss_weight', type=float, default=10.0)
 py.arg('--identity_loss_weight', type=float, default=0.0)
-py.arg('--normal_prob_loss_weight', type=float, default=0.1)
+py.arg('--normal_prob_loss_weight', type=float, default=0.001)
 py.arg('--pool_size', type=int, default=50)  # pool size to store fake samples
 py.arg('--trainA', type=str, default='trainFulBezierImage')  # pool size to store fake samples
 py.arg('--trainB', type=str, default='trainFulSpermImage')  # pool size to store fake samples
@@ -68,8 +68,6 @@ A_mask_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskA)
 B_mask_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskB), '*.'+args.fileExtension)
 A_B_dataset, len_dataset = data.make_zip_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False, channels=channels)
 
-A_B_dataset_random, _ = data.make_zip_dataset(A_img_paths, B_img_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False, channels=channels)
-
 A2B_pool = data.ItemPool(args.pool_size)
 B2A_pool = data.ItemPool(args.pool_size)
 
@@ -77,37 +75,40 @@ A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA),
 B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtension)
 A_mask_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskA), '*.'+args.fileExtension)
 B_mask_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.trainMaskB), '*.'+args.fileExtension)
-A_B_dataset_test, _ = data.make_zip_dataset_masked(A_img_paths_test, B_img_paths_test, A_mask_paths_test, B_mask_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=False, channels=channels)
+A_B_dataset_test, _ = data.make_zip_dataset_masked(A_img_paths_test, B_img_paths_test, A_mask_paths_test, B_mask_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=True, channels=channels)
 
 
 # ==============================================================================
 # =                                   models                                   =
 # ==============================================================================
 
-G_A2B_Enc = moduleHalfCycle.ForwardResidualGeneratorEncoder2(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
-G_B2A_Enc = moduleHalfCycle.ForwardResidualGeneratorEncoder2(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
-
-G_B2Style_Enc = moduleHalfCycle.BackwardResidualGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
+G_A2B_Enc = moduleModified.ForwardResidualGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
+G_B2A_Enc = moduleModified.BackwardResidualGeneratorEncoder(input_shape=(args.crop_size, args.crop_size, channels), output_channels=channels)
 
 
-G_A2B_Dec = moduleHalfCycle.ForwardResidualGeneratorDecoder(latent_input_shape=G_A2B_Enc.outputs[0].shape[1:],
-                                                            code_input_shape=(*G_B2Style_Enc.output_shape[1:-1], G_B2Style_Enc.output_shape[-1]//2),
+G_A2B_Dec = moduleModified.ForwardResidualGeneratorDecoder(latent_input_shape=G_A2B_Enc.outputs[0].shape[1:],
+                                                            code_input_shape=(*G_B2A_Enc.outputs[1].shape[1:-1], G_B2A_Enc.outputs[1].shape[-1]//2),
                                                             res1_input_shape=G_A2B_Enc.outputs[1].shape[1:],
                                                             res2_input_shape=G_A2B_Enc.outputs[2].shape[1:],
                                                             res3_input_shape=G_A2B_Enc.outputs[3].shape[1:],
                                                             output_channels=channels)
 
-
-# G_B2A_Dec = moduleHalfCycle.BackwardResidualGeneratorDecoder(latent_input_shape=G_B2Style_Enc.outputs[0].shape[1:],
-#                                                             res1_input_shape=G_B2Style_Enc.outputs[2].shape[1:],
-#                                                             res2_input_shape=G_B2Style_Enc.outputs[3].shape[1:],
-#                                                             res3_input_shape=G_B2Style_Enc.outputs[4].shape[1:],
-#                                                             output_channels=channels)
-
-# D_A = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, channels))
 D_B = module.ConvDiscriminator(input_shape=(args.crop_size, args.crop_size, channels))
 
 d_loss_fn, g_loss_fn = gan.get_adversarial_losses_fn(args.adversarial_loss_mode)
+
+if args.reconstruction_loss_mode == 'synth_bce':
+    cycle_loss_fn_A = tf.losses.BinaryCrossentropy()
+    identity_loss_fn_A = tf.losses.BinaryCrossentropy()
+    cycle_loss_fn_B = tf.losses.MeanAbsoluteError()
+    identity_loss_fn_B = tf.losses.MeanAbsoluteError()
+    reconstruction_mask_loss = tf.losses.MeanAbsoluteError()
+else:
+    cycle_loss_fn_A = tf.losses.MeanAbsoluteError()
+    identity_loss_fn_A = tf.losses.MeanAbsoluteError()
+    cycle_loss_fn_B = tf.losses.MeanAbsoluteError()
+    identity_loss_fn_B = tf.losses.MeanAbsoluteError()
+    reconstruction_mask_loss = tf.losses.MeanAbsoluteError()
 
 G_lr_scheduler = module.LinearDecay(args.G_lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
 D_lr_scheduler = module.LinearDecay(args.D_lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
@@ -124,17 +125,10 @@ def G_A2B(A, codes, training=True):
     A2B = G_A2B_Dec([A_latent, codes, res1, res2, res3], training=training)
     return A2B, A_latent, res1, res2, res3
 
-def G_B2BStyle(B, latent, res1, res2, res3, training=True):
-    B_code = G_B2Style_Enc(B, training=True)
-    samples, mean, logvar = split_mean_var(B_code)
-    B2B = G_A2B_Dec([latent, samples, res1, res2, res3], training=training)
-    return B2B, samples, mean, logvar
-
-def G_B2B_masked(B, mask, code, training=True):
-    img = (((B+1)/2)*mask)*2 - 1.
-    latent, res1, res2, res3 = G_B2A_Enc(img)
-    B2B = G_A2B_Dec([latent, code, res1, res2, res3], training=training)
-    return B2B, latent, res1, res2, res3
+def G_B2B(B, training=True):
+    B_latent, B_code, res1, res2, res3 = G_B2A_Enc(B, training=training)
+    B2B = G_A2B_Dec([B_latent, B_code, res1, res2, res3], training=training)
+    return B2B, B_latent, B_code, res1, res2, res3
 
 
 @tf.function
@@ -152,135 +146,92 @@ def log_normal_pdf(sample, mean, logvar, raxis=-1):
 def split_mean_var(input):
     mean, logvar = tf.split(input, num_or_size_splits=2, axis=-1)
     samples = reparametrize(mean, tf.clip_by_value(logvar, -10., 10.))
-    return samples, mean, logvar
+    return samples
 
-@tf.function
-def train_G(A, B, A_mask, B_mask, A_rand, B_rand):
+# @tf.function
+def train_G(A, B, A_mask, B_mask):
     with tf.GradientTape() as t:
         # Standard Cycle-GAN
-        # B2A, B_latent, B_code, B_res1, B_res2, B_res3 = G_B2A(B, training=True)
-        rand_code = tf.random.normal(shape=(args.batch_size, *G_B2Style_Enc.output_shape[1:-1], G_B2Style_Enc.output_shape[-1]//2))
-
-        A2B, A_latent, A_res1, A_res2, A_res3 = G_A2B(A, rand_code, training=True)
-        B2B, B_style_code_sample, B_code_mean, B_code_logvar = G_B2BStyle(B, A_latent, A_res1, A_res2, A_res3, training=True)
-        B2B_masked, B_latent, B_res1, B_res2, B_res3 = G_B2B_masked(B, A_mask, B_style_code_sample)
-
-        A2B_rand, A_latent_rand, A_res1_rand, A_res2_rand, A_res3_rand = G_A2B(A_rand, rand_code, training=True)
-        B2B_rand, B_code_sample_rand, B_code_mean_rand, B_code_logvar_rand = G_B2BStyle(B_rand, A_latent_rand, A_res1_rand, A_res2_rand, A_res3_rand, training=True)
-
+        B2B, B_latent, B_code, B_res1, B_res2, B_res3 = G_B2B(B, training=True)
+        # rand_code = tf.random.normal(shape=(*B_code.shape[:-1], B_code.shape[-1]//2))
+        code = split_mean_var(B_code)
+        A2B, A_latent, A_res1, A_res2, A_res3 = G_A2B(A, code, training=True)
 
         # Standard Cycle-GAN
         A2B_d_logits = D_B(A2B, training=True)
         B2B_d_logits = D_B(B2B, training=True)
-        A2B_rand_d_logits = D_B(A2B_rand, training=True)
-        B2B_rand_d_logits = D_B(B2B_rand, training=True)
 
         A2B_g_loss = g_loss_fn(A2B_d_logits)
         B2B_g_loss = g_loss_fn(B2B_d_logits)
-        A2B_rand_g_loss = g_loss_fn(A2B_rand_d_logits)
-        B2B_rand_g_loss = g_loss_fn(B2B_rand_d_logits)
 
-        B2B_rec_loss = tf.reduce_mean(tf.losses.mse(B, B2B))
-        B2B_masked_rec_loss = tf.reduce_mean(tf.losses.mse((((B+1)/2)*A_mask)*2 - 1., B2B_masked))
+        B2B_mask_loss = reconstruction_mask_loss(A*A_mask, B2B*A_mask)
+        A2B_mask_loss = reconstruction_mask_loss(B*A_mask, A2B*A_mask)
 
+        G_loss = A2B_g_loss + B2B_g_loss + B2B_mask_loss + A2B_mask_loss
 
-        latent_distillation = tf.reduce_mean(tf.losses.mse(tf.stop_gradient(A_latent), B_latent)) + \
-                              tf.reduce_mean(tf.losses.mse(tf.stop_gradient(A_res1), B_res1)) + \
-                              tf.reduce_mean(tf.losses.mse(tf.stop_gradient(A_res2), B_res2)) + \
-                              tf.reduce_mean(tf.losses.mse(tf.stop_gradient(A_res3), B_res3))
+        # Modification
+        # Identity in splines latent spaces
+        latent_loss = tf.reduce_mean(tf.losses.mse(tf.stop_gradient(A_latent), B_latent))
 
+        G_loss += latent_loss
 
-        logpz = tf.reduce_mean(log_normal_pdf(B_style_code_sample, 0., 0.))
+        # Maintain code_u and code_logvar as a normal distribution N(0, 1)
+        B_code_log = split_mean_var(B_code)
+        A_latent_log = split_mean_var(A_latent)
+        B_latent_log = split_mean_var(B_latent)
+        logpz = tf.reduce_mean(log_normal_pdf(B_code_log, 0., 0.)) + \
+                tf.reduce_mean(log_normal_pdf(A_latent_log, 0., 0.)) + \
+                tf.reduce_mean(log_normal_pdf(B_latent_log, 0., 0.)) # mean = 0 and logvar = 0 equivalent to var = 1
 
-        G_loss = (A2B_g_loss + B2B_g_loss) + (A2B_rand_g_loss, B2B_rand_g_loss) + B2B_rec_loss + B2B_masked_rec_loss + latent_distillation - logpz * args.normal_prob_loss_weight
+        G_loss += - logpz * args.normal_prob_loss_weight
+    G_grad = t.gradient(G_loss, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2A_Enc.trainable_variables)
+    G_optimizer.apply_gradients(zip(G_grad, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2A_Enc.trainable_variables))
 
-
-    G_grad = t.gradient(G_loss, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2Style_Enc.trainable_variables + G_B2A_Enc.trainable_variables)
-    G_optimizer.apply_gradients(zip(G_grad, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2Style_Enc.trainable_variables + G_B2A_Enc.trainable_variables))
-
-    return A2B, B2B, A2B_rand, B2B_rand, {'A2B_g_loss': A2B_g_loss,
+    return A2B, B2A, {'A2B_g_loss': A2B_g_loss,
                       'B2B_g_loss': B2B_g_loss,
-                      'B2B_rec_loss': B2B_rec_loss,
-                      'B2B_masked_rec_loss': B2B_masked_rec_loss,
-                      'A2B_rand_g_loss': A2B_rand_g_loss,
-                      'B2B_rand_g_loss': B2B_rand_g_loss,
-                      'A_latent_distillation': tf.reduce_mean(tf.losses.mse(A_latent, tf.stop_gradient(B_latent))),
-                      'A_latent_res1_distillation': tf.reduce_mean(tf.losses.mse(A_res1, tf.stop_gradient(B_res1))),
-                      'A_latent_res2_distillation': tf.reduce_mean(tf.losses.mse(A_res2, tf.stop_gradient(B_res2))),
-                      'A_latent_res3_distillation': tf.reduce_mean(tf.losses.mse(A_res3, tf.stop_gradient(B_res3))),
-                      'logpz': logpz * args.normal_prob_loss_weight}
+                      'logpz': logpz,
+                      'A2B_mask_loss': A2B_mask_loss,
+                      'B2B_mask_loss': B2B_mask_loss,
+                      'latent_loss': latent_loss}
 
 
 @tf.function
-def train_D(A, B, A2B, B2B, A_rand, B_rand, A2B_rand, B2B_rand):
+def train_D(A, B, A2B, B2A,  A_mask, B_mask):
     with tf.GradientTape() as t:
         B_d_logits = D_B(B, training=True)
         A2B_d_logits = D_B(A2B, training=True)
-        # B2B_d_logits = D_B(B2B, training=True)
-
-        B_rand_d_logits = D_B(B_rand, training=True)
-        A2B_rand_d_logits = D_B(A2B_rand, training=True)
-        # B2B_rand_d_logits = D_B(B2B_rand, training=True)
 
         B_d_loss, A2B_d_loss = d_loss_fn(B_d_logits, A2B_d_logits)
-        # BB_d_loss, B2B_d_loss = d_loss_fn(B_d_logits, B2B_d_logits)
-        B_rand_d_loss, A2B_rand_d_loss = d_loss_fn(B_rand_d_logits, A2B_d_logits)
-        # BB_rand_d_loss, A2B_rand_d_loss = d_loss_fn(B_rand_d_logits, B2B_d_logits)
-
-        B_d_loss_1, A2B_d_loss_1 = d_loss_fn(B_d_logits, A2B_rand_d_logits)
-        # BB_d_loss_1, B2B_d_loss_1 = d_loss_fn(B_d_logits, B2B_rand_d_logits)
-        B_rand_d_loss_1, A2B_rand_d_loss_1 = d_loss_fn(B_rand_d_logits, A2B_rand_d_logits)
-        # BB_rand_d_loss_1, A2B_rand_d_loss_1 = d_loss_fn(B_rand_d_logits, B2B_rand_d_logits)
 
         D_B_gp = gan.gradient_penalty(functools.partial(D_B, training=True), B, A2B, mode=args.gradient_penalty_mode)
 
-        D_loss = (B_d_loss/2 + A2B_d_loss) + \
-                 (B_rand_d_loss/2 + A2B_rand_d_loss) + \
-                 (B_d_loss_1/2 + A2B_d_loss_1) + \
-                 (B_rand_d_loss_1/2 + A2B_rand_d_loss_1) + \
-                 (D_B_gp * args.gradient_penalty_weight)
+        D_loss = (B_d_loss + A2B_d_loss) + D_B_gp * args.gradient_penalty_weight
 
     D_grad = t.gradient(D_loss, D_B.trainable_variables)
     D_optimizer.apply_gradients(zip(D_grad, D_B.trainable_variables))
 
-    return {'B_d_loss': B_d_loss,
-            'A2B_d_loss': A2B_d_loss,
-            # 'BB_d_loss': BB_d_loss,
-            # 'B2B_d_loss': B2B_d_loss,
-            'B_rand_d_loss': B_rand_d_loss,
-            # 'BB_rand_d_loss': BB_rand_d_loss,
-            'B_d_loss_1': B_d_loss_1,
-            'A2B_d_loss_1': A2B_d_loss_1,
-            # 'BB_d_loss_1': BB_d_loss_1,
-            # 'B2B_d_loss_1': B2B_d_loss_1,
-            'B_rand_d_loss_1': B_rand_d_loss_1,
-            # 'BB_rand_d_loss_1': BB_rand_d_loss_1,
-            'D_B_gp': D_B_gp * args.gradient_penalty_weight,
-            'D_loss': D_loss}
+    return {'B_d_loss': B_d_loss + A2B_d_loss,
+            'D_B_gp': D_B_gp}
 
 
-def train_step(A, B, A_mask, B_mask, A_rand, B_rand):
-    A2B, B2B, A2B_rand, B2B_rand, G_loss_dict = train_G(A, B, A_mask, B_mask, A_rand, B_rand)
+def train_step(A, B, A_mask, B_mask):
+    A2B, B2A, G_loss_dict = train_G(A, B, A_mask, B_mask)
 
     # cannot autograph `A2B_pool`
     A2B = A2B_pool(A2B)  # or A2B = A2B_pool(A2B.numpy()), but it is much slower
-    B2B = B2A_pool(B2B)  # because of the communication between CPU and GPU
-    A2B_rand = A2B_pool(A2B_rand)  # or A2B = A2B_pool(A2B.numpy()), but it is much slower
-    B2B_rand = B2A_pool(B2B_rand)  # because of the communication between CPU and GPU
+    B2A = B2A_pool(B2A)  # because of the communication between CPU and GPU
 
-    D_loss_dict = train_D(A, B, A2B, B2B, A_rand, B_rand, A2B_rand, B2B_rand)
+    D_loss_dict = train_D(A, B, A2B, B2A, A_mask, B_mask)
 
     return G_loss_dict, D_loss_dict
 
 
 @tf.function
-def sample(A, B, A_mask, B_mask):
-    rand_code = tf.random.normal(shape=(1, *G_B2Style_Enc.output_shape[1:-1], G_B2Style_Enc.output_shape[-1]//2))
+def sample(A, B):
+    B2B, B_latent, B_code, B_res1, B_res2, B_res3 = G_B2B(B, training=False)
+    rand_code = tf.random.normal(shape=(*B_code.shape[:-1], B_code.shape[-1] // 2))
     A2B, A_latent, A_res1, A_res2, A_res3 = G_A2B(A, rand_code, training=False)
-    B2B, B_style_code_sample, B_code_mean, B_code_logvar = G_B2BStyle(B, A_latent, A_res1, A_res2, A_res3, training=True)
-    B2B_masked, B_latent, _, _, _ = G_B2B_masked(B, A_mask, B_style_code_sample)
-    B2B_masked_w_mask = (((B2B_masked+1)/2)*A_mask)*2 - 1.
-    return A2B, B2B, B2B_masked, B2B_masked_w_mask
+    return A2B, B2B
 
 
 # ==============================================================================
@@ -293,7 +244,6 @@ ep_cnt = tf.Variable(initial_value=0, trainable=False, dtype=tf.int64)
 # checkpoint
 checkpoint = tl.Checkpoint(dict(G_A2B_Enc=G_A2B_Enc,
                                 G_A2B_Dec=G_A2B_Dec,
-                                G_B2Style_Enc=G_B2Style_Enc,
                                 G_B2A_Enc=G_B2A_Enc,
                                 D_B=D_B,
                                 G_optimizer=G_optimizer,
@@ -324,8 +274,8 @@ with train_summary_writer.as_default():
         ep_cnt.assign_add(1)
 
         # train for an epoch
-        for [A, B, A_mask, B_mask], [A_rand, B_rand] in zip(tqdm.tqdm(A_B_dataset, desc='Inner Epoch Loop', total=len_dataset), A_B_dataset_random):
-            G_loss_dict, D_loss_dict = train_step(A, B, A_mask, B_mask, A_rand, B_rand)
+        for A, B, A_mask, B_mask in tqdm.tqdm(A_B_dataset, desc='Inner Epoch Loop', total=len_dataset):
+            G_loss_dict, D_loss_dict = train_step(A, B, A_mask, B_mask)
 
             # # summary
             tl.summary(G_loss_dict, step=G_optimizer.iterations, name='G_losses')
@@ -340,14 +290,11 @@ with train_summary_writer.as_default():
                     test_iter = iter(A_B_dataset_test)
                     A, B, A_mask, B_mask = next(test_iter)
 
-                A2B, B2B, B2B_masked, B2B_masked_w_mask = sample(A, B, A_mask, B_mask)
+                A2B, B2B = sample(A, B)
                 img = im.immerge(np.concatenate([A,
                                                   A2B,
-                                                  B2B_masked,
                                                   B,
-                                                  B2B,
-                                                  B2B_masked_w_mask,
-                                                  ], axis=0), n_rows=2)
+                                                  B2B], axis=0), n_rows=2)
 
                 if channels == 1:
                     img = np.squeeze(np.stack((img,)*3, axis=-1))

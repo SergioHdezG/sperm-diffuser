@@ -82,6 +82,7 @@ def make_mask_seed_dataset(img_paths, batch_size, load_size, crop_size, training
             img = tf.image.resize(img, [crop_size,
                                         crop_size])  # or img = tf.image.resize(img, [load_size, load_size]); img = tl.center_crop(img, crop_size)
             img = tf.clip_by_value(img, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+
             return img
 
     return tl.disk_image_batch_dataset(img_paths,
@@ -210,7 +211,6 @@ def make_zip_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths
     len_dataset = max(len(A_img_paths), len(B_img_paths)) // batch_size
 
     return A_B_dataset, len_dataset
-
 def make_zip_datasetSplines2SSingleperm(A_spl_path, B_img_paths, batch_size, load_size, crop_size, training, shuffle=True, repeat=False):
     # zip two datasets aligned by the longer one
     if repeat:

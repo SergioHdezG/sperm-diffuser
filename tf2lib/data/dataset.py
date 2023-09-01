@@ -132,7 +132,6 @@ def disk_image_batch_dataset(img_paths,
 
     return dataset
 
-
 def disk_npy_batch_dataset(img_paths,
                              batch_size,
                              labels=None,

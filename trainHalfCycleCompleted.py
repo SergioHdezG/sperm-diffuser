@@ -17,7 +17,7 @@ import module
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--output_dir', default='BezierImage2SpermImageCycleComplete3')
+py.arg('--output_dir', default='BezierImage2SpermImageCycleComplete2')
 py.arg('--dataset', default='FulBezier2FulSpermMasked')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size
@@ -196,7 +196,7 @@ def train_G(A, B, A_mask, B_mask, A_rand, B_rand):
         B2A_B_mask_selfrec_loss = tf.reduce_mean(tf.losses.mse((((A+1)/2)*B_mask)*2 - 1., B2A_B_mask))
         B2A_A_mask_selfrec_loss = tf.reduce_mean(tf.losses.mse((((A+1)/2)*A_mask)*2 - 1., B2A_A_mask))
 
-        B2A_loss = 0*(B2A_B_mask_g_loss + B2A_A_mask_g_loss + 0.1*(B2A_B_mask_selfrec_loss + B2A_A_mask_selfrec_loss))
+        B2A_loss = (B2A_B_mask_g_loss + B2A_A_mask_g_loss + 0.1*(B2A_B_mask_selfrec_loss + B2A_A_mask_selfrec_loss))
 
         B2B_rec_loss = tf.reduce_mean(tf.losses.mse(B, B2B))
         B2B_masked_rec_loss = tf.reduce_mean(tf.losses.mse((((B+1)/2)*A_mask)*2 - 1., B2B_masked))
@@ -217,7 +217,9 @@ def train_G(A, B, A_mask, B_mask, A_rand, B_rand):
     G_grad = t.gradient(G_loss, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2A_Enc.trainable_variables + G_B2B_Enc.trainable_variables)
     G_optimizer.apply_gradients(zip(G_grad, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2A_Enc.trainable_variables + G_B2B_Enc.trainable_variables))
 
-    return (A2B, B2A_A_mask, B2A_B_mask, B2B, A2B_rand, B2B_rand,
+    return (A2B,
+            B2A_A_mask, B2A_B_mask,
+            B2B, A2B_rand, B2B_rand,
                       {'A2B_g_loss': A2B_g_loss,
                       'B2B_g_loss': B2B_g_loss,
                       'B2B_rec_loss': B2B_rec_loss,
@@ -265,20 +267,20 @@ def train_D(A, B, A2B, B2A_A_mask, B2A_B_mask, B2B, A_rand, B_rand, A2B_rand, B2
                  (B_rand_d_loss_1 + A2B_rand_d_loss_1) + (BB_rand_d_loss_1 + A2B_rand_d_loss_1) + \
                  (D_B_gp * args.gradient_penalty_weight)
 
-        A_d_logits = D_B(A, training=True)
-        B2A_B_mask_d_logits = D_B(B2A_B_mask, training=True)
-        B2A_A_mask_d_logits = D_B(B2A_A_mask, training=True)
+        A_d_logits = D_A(A, training=True)
+        B2A_B_mask_d_logits = D_A(B2A_B_mask, training=True)
+        B2A_A_mask_d_logits = D_A(B2A_A_mask, training=True)
 
         A_d_B_mask_loss, B2A_d_B_mask_loss = d_loss_fn(A_d_logits, B2A_B_mask_d_logits)
         A_d_A_mask_loss, B2A_d_A_mask_loss = d_loss_fn(A_d_logits, B2A_A_mask_d_logits)
 
         D_A_gp = gan.gradient_penalty(functools.partial(D_A, training=True), A, B2A_B_mask, mode=args.gradient_penalty_mode)
 
-        D_A_loss = 0.*(A_d_B_mask_loss + B2A_d_B_mask_loss) + (A_d_A_mask_loss + B2A_d_A_mask_loss) + D_A_gp * args.gradient_penalty_weight
+        D_A_loss = (A_d_B_mask_loss + B2A_d_B_mask_loss) + (A_d_A_mask_loss + B2A_d_A_mask_loss) + D_A_gp * args.gradient_penalty_weight
 
-        D_loss = D_A_loss + D_B_loss
-    D_grad = t.gradient(D_loss, D_B.trainable_variables)
-    D_optimizer.apply_gradients(zip(D_grad, D_B.trainable_variables))
+        D_loss =  D_B_loss + D_A_loss
+    D_grad = t.gradient(D_loss, D_B.trainable_variables + D_A.trainable_variables)
+    D_optimizer.apply_gradients(zip(D_grad, D_B.trainable_variables + D_A.trainable_variables))
 
     return {'D_loss': D_loss,
             'D_A_loss': D_A_loss,
@@ -290,11 +292,18 @@ def train_D(A, B, A2B, B2A_A_mask, B2A_B_mask, B2B, A_rand, B_rand, A2B_rand, B2
             'B2A_d_loss': B2A_d_B_mask_loss,
             'B2A_d_A_mask_loss': B2A_d_A_mask_loss,
             'D_B_gp': D_B_gp * args.gradient_penalty_weight,
-            'D_A_gp': D_A_gp * args.gradient_penalty_weight}
+            'D_A_gp': D_A_gp * args.gradient_penalty_weight
+            }
 
 
 def train_step(A, B, A_mask, B_mask, A_rand, B_rand):
-    A2B,  B2A_A_mask, B2A_B_mask, B2B, A2B_rand, B2B_rand, G_loss_dict = train_G(A, B, A_mask, B_mask, A_rand, B_rand)
+    (A2B,
+     B2A_A_mask,
+     B2A_B_mask,
+     B2B,
+     A2B_rand,
+     B2B_rand,
+     G_loss_dict) = train_G(A, B, A_mask, B_mask, A_rand, B_rand)
 
     # cannot autograph `A2B_pool`
     A2B = A2B_pool(A2B)  # or A2B = A2B_pool(A2B.numpy()), but it is much slower
@@ -305,7 +314,7 @@ def train_step(A, B, A_mask, B_mask, A_rand, B_rand):
     B2A_B_mask = B2A_pool(B2A_B_mask)  # because of the communication between CPU and GPU
 
 
-    D_loss_dict = train_D(A, B, A2B, B2A_A_mask, B2A_B_mask, B2B, A_rand, B_rand, A2B_rand, B2B_rand)
+    D_loss_dict = train_D( A, B, A2B, B2A_A_mask, B2A_B_mask, B2B, A_rand, B_rand, A2B_rand, B2B_rand)
 
     return G_loss_dict, D_loss_dict
 
@@ -317,7 +326,8 @@ def sample(A, B, A_mask, B_mask):
     B2B, B_code_sample, B_code_mean, B_code_logvar = G_B2B(B, A_latent, A_res1, A_res2, A_res3, training=True)
     B2A_B_mask, _, _, _, _ = G_B2A(B, B_mask, training=True)
     B2B_masked, B_latent, _, _, _ = G_B2B_masked(B, B_mask, B_code_sample)
-    return A2B, B2B, B2B_masked, B2A_B_mask
+    return (A2B, B2B, B2B_masked,
+            B2A_B_mask)
 
 
 # ==============================================================================
