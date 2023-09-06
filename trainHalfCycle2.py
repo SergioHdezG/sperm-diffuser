@@ -1,4 +1,6 @@
 import functools
+import os
+import random
 
 import imlib as im
 import numpy as np
@@ -17,7 +19,8 @@ import module
 # =                                   param                                    =
 # ==============================================================================
 
-py.arg('--output_dir', default='BezierImage2SpermImageHalfCycle7')
+
+py.arg('--output_dir', default='BezierImage2SpermImageHalfCycle8')
 py.arg('--dataset', default='FulBezier2FulSpermMasked')
 py.arg('--datasets_dir', default='datasets')
 py.arg('--load_size', type=int, default=286)  # load image to this size

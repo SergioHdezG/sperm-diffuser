@@ -67,6 +67,92 @@ def make_seed_dataset(img_paths, batch_size, load_size, crop_size, training, dro
                                        repeat=repeat,
                                        channels=channels)
 
+def make_tuple_seed_dataset(img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=True, repeat=1, channels=3):
+    if training:
+        def random_crop_flip(img, y1, x1, y2, x2, crop_size, k):
+            box = tf.stack([y1, x1, y2, x2])
+
+            if tf.rank(img) == 3:
+                img = tf.expand_dims(img, axis=0)
+            # Apply random crop and resize to each image
+            img = tf.image.crop_and_resize(img, [box], [0], crop_size=(crop_size, crop_size))
+
+            # Apply rotation
+            img = tf.image.rot90(img, k=k)
+            return img
+
+        @tf.function
+        def _map_fn(A, B, A_mask, B_mask):  # preprocessing
+            # img = tf.image.random_flip_left_right(img, seed=0)
+            A = tf.image.resize(A, [load_size, load_size])
+            B = tf.image.resize(B, [load_size, load_size])
+            A_mask = tf.image.resize(A_mask, [load_size, load_size])
+            B_mask = tf.image.resize(B_mask, [load_size, load_size])
+
+            # Calculate crop size and bounding boxes
+            height, width = load_size, load_size
+
+            y1 = tf.random.uniform(shape=(), maxval=height - crop_size + 1, dtype=tf.int32)/height
+            x1 = tf.random.uniform(shape=(), maxval=width - crop_size + 1, dtype=tf.int32)/width
+            y2 = y1 + crop_size/height
+            x2 = x1 + crop_size/width
+            print(y1, x1, y2, x2, crop_size)
+            k = tf.random.uniform(shape=(), minval=0, maxval=4, dtype=tf.int32)
+            A = random_crop_flip(A, y1, x1, y2, x2, crop_size, k)
+            B = random_crop_flip(B, y1, x1, y2, x2, crop_size, k)
+            A_mask = random_crop_flip(A_mask, y1, x1, y2, x2, crop_size, k)
+            B_mask = random_crop_flip(B_mask, y1, x1, y2, x2, crop_size, k)
+
+            # Remove the batch dimension from the results
+            A = tf.squeeze(A, axis=0)
+            #A = tf.reshape(A, (300, 300, 1))
+            B = tf.squeeze(B, axis=0)
+            A_mask = tf.squeeze(A_mask, axis=0)
+            B_mask = tf.squeeze(B_mask, axis=0)
+            print('size A: ', A)
+            A = tf.clip_by_value(A, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            A = A * 2 - 1
+            A = tf.clip_by_value(A, -0.99, 0.99)
+
+            B = tf.clip_by_value(B, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            B = B * 2 - 1
+            B = tf.clip_by_value(B, -0.99, 0.99)
+
+            A_mask = tf.clip_by_value(A_mask, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+
+            B_mask = tf.clip_by_value(B_mask, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+
+            return A, B, A_mask, B_mask
+    else:
+        @tf.function
+        def _map_fn(A, B, A_mask, B_mask):  # preprocessing
+            A = tf.image.resize(A, [crop_size, crop_size])
+            B = tf.image.resize(B, [crop_size, crop_size])
+            A_mask = tf.image.resize(A_mask, [crop_size, crop_size])
+            B_mask = tf.image.resize(B_mask, [crop_size, crop_size])
+
+            # img = tf.image.random_crop(img, [crop_size, crop_size, tf.shape(img)[-1]], seed=0)
+            A = tf.clip_by_value(A, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            A = A * 2 - 1
+            A = tf.clip_by_value(A, -0.99, 0.99)
+
+            B = tf.clip_by_value(B, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            B = B * 2 - 1
+            B = tf.clip_by_value(B, -0.99, 0.99)
+
+            A_mask = tf.clip_by_value(A_mask, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+
+            B_mask = tf.clip_by_value(B_mask, 0, 255) / 255.0  # or img = tl.minmax_norm(img)
+            return A, B, A_mask, B_mask
+
+    return tl.disk_tuple_image_batch_dataset(img_paths,
+                                       batch_size,
+                                       drop_remainder=drop_remainder,
+                                       map_fn=_map_fn,
+                                       shuffle=shuffle,
+                                       repeat=repeat,
+                                       channels=channels)
+
 def make_mask_seed_dataset(img_paths, batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=True, repeat=1, channels=3):
     if training:
         @tf.function
@@ -199,6 +285,13 @@ def make_zip_dataset(A_img_paths, B_img_paths, batch_size, load_size, crop_size,
 
     return A_B_dataset, len_dataset
 
+def make_tuple_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths, batch_size, load_size, crop_size, training, shuffle=False, repeat=False, channels=3):
+    A_B_dataset = make_tuple_seed_dataset((A_img_paths, B_img_paths, A_mask_paths, B_mask_paths),  batch_size, load_size, crop_size, training, drop_remainder=True, shuffle=False, channels=channels)
+
+    len_dataset = max(len(A_img_paths), len(B_img_paths)) // batch_size
+
+    return A_B_dataset, len_dataset
+
 def make_zip_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths, batch_size, load_size, crop_size, training, shuffle=False, repeat=False, channels=3):
     # zip two datasets aligned by the longer one
 
@@ -211,6 +304,7 @@ def make_zip_dataset_masked(A_img_paths, B_img_paths, A_mask_paths, B_mask_paths
     len_dataset = max(len(A_img_paths), len(B_img_paths)) // batch_size
 
     return A_B_dataset, len_dataset
+
 def make_zip_datasetSplines2SSingleperm(A_spl_path, B_img_paths, batch_size, load_size, crop_size, training, shuffle=True, repeat=False):
     # zip two datasets aligned by the longer one
     if repeat:
