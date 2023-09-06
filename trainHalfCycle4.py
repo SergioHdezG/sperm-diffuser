@@ -185,20 +185,20 @@ def train_G(A, B, A_mask, B_mask, A_rand, B_rand):
         B2B, B_style_code_sample, B_code_mean, B_code_logvar = G_B2BStyle(B, A_latent, A_res1, A_res2, A_res3, training=True)
         B2B_masked, B_mask_latent, B_mask_res1, B_mask_res2, B_mask_res3 = G_B2B_masked(B, A_mask, B_style_code_sample)
 
-        A2B_rand, A_latent_rand, A_res1_rand, A_res2_rand, A_res3_rand = G_A2B(A_rand, rand_code, training=True)
-        B2B_rand, B_code_sample_rand, B_code_mean_rand, B_code_logvar_rand = G_B2BStyle(B_rand, A_latent_rand, A_res1_rand, A_res2_rand, A_res3_rand, training=True)
+        # A2B_rand, A_latent_rand, A_res1_rand, A_res2_rand, A_res3_rand = G_A2B(A_rand, rand_code, training=True)
+        # B2B_rand, B_code_sample_rand, B_code_mean_rand, B_code_logvar_rand = G_B2BStyle(B_rand, A_latent_rand, A_res1_rand, A_res2_rand, A_res3_rand, training=True)
 
 
         # Standard Cycle-GAN
         A2B_d_logits = D_B(A2B, training=True)
         B2B_d_logits = D_B(B2B, training=True)
-        A2B_rand_d_logits = D_B(A2B_rand, training=True)
-        B2B_rand_d_logits = D_B(B2B_rand, training=True)
+        # A2B_rand_d_logits = D_B(A2B_rand, training=True)
+        # B2B_rand_d_logits = D_B(B2B_rand, training=True)
 
         A2B_g_loss = g_loss_fn(A2B_d_logits)
         B2B_g_loss = g_loss_fn(B2B_d_logits)
-        A2B_rand_g_loss = g_loss_fn(A2B_rand_d_logits)
-        B2B_rand_g_loss = g_loss_fn(B2B_rand_d_logits)
+        # A2B_rand_g_loss = g_loss_fn(A2B_rand_d_logits)
+        # B2B_rand_g_loss = g_loss_fn(B2B_rand_d_logits)
 
         B2B_rec_loss = tf.reduce_mean(tf.losses.mse(B, B2B))
         B2B_masked_rec_loss = tf.reduce_mean(tf.losses.mse((((B+1)/2)*A_mask)*2 - 1., B2B_masked))
@@ -217,17 +217,20 @@ def train_G(A, B, A_mask, B_mask, A_rand, B_rand):
     G_grad = t.gradient(G_loss, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2Style_Enc.trainable_variables + G_B2A_Enc.trainable_variables)
     G_optimizer.apply_gradients(zip(G_grad, G_A2B_Enc.trainable_variables + G_A2B_Dec.trainable_variables + G_B2Style_Enc.trainable_variables + G_B2A_Enc.trainable_variables))
 
-    return A2B, B2B, A2B_rand, B2B_rand, {'A2B_g_loss': A2B_g_loss,
+    return (A2B, B2B,
+            A2B, #A2B_rand,
+            B2B, #B2B_rand,
+            {'A2B_g_loss': A2B_g_loss,
                       'B2B_g_loss': B2B_g_loss,
                       'B2B_rec_loss': B2B_rec_loss,
                       'B2B_masked_rec_loss': B2B_masked_rec_loss,
-                      'A2B_rand_g_loss': A2B_rand_g_loss,
-                      'B2B_rand_g_loss': B2B_rand_g_loss,
+                      # 'A2B_rand_g_loss': A2B_rand_g_loss,
+                      # 'B2B_rand_g_loss': B2B_rand_g_loss,
                       'A_latent_distillation': tf.reduce_mean(tf.losses.mse(A_latent, tf.stop_gradient(B_mask_latent))),
                       'A_latent_res1_distillation': tf.reduce_mean(tf.losses.mse(A_res1, tf.stop_gradient(B_mask_res1))),
                       'A_latent_res2_distillation': tf.reduce_mean(tf.losses.mse(A_res2, tf.stop_gradient(B_mask_res2))),
                       'A_latent_res3_distillation': tf.reduce_mean(tf.losses.mse(A_res3, tf.stop_gradient(B_mask_res3))),
-                      'logpz': logpz * args.normal_prob_loss_weight}
+                      'logpz': logpz * args.normal_prob_loss_weight})
 
 
 @tf.function

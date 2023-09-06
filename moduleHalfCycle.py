@@ -115,7 +115,6 @@ def ForwardResidualGeneratorDecoder(latent_input_shape=(8, 8, 8),
 
     h = h + res3
 
-    # 5
     h = tf.pad(h, [[0, 0], [3, 3], [3, 3], [0, 0]], mode='REFLECT')
     h = keras.layers.Conv2D(output_channels, 7, padding='valid')(h)
     h = tf.tanh(h)
