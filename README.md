@@ -4,7 +4,7 @@ This repository is organized in three brands.
 
 - The [main branch](https://github.com/SergioHdezG/sperm-diffuser) contains the diffusion model to generate schematic sperm videos. It includes the pipeline to generate individual spermatozoon trajectories and annotated videos of multiple schematic spermatozoa. This branch makes use of a modified version of the diffusion model proposed by Janner et al. [[Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser)].
 - The [style-transfer branch](https://github.com/SergioHdezG/tree/style-transfer) contains tools to transform the schematic videos generated with the diffusion model into real-like style. This branch makes use of a Cyclical Generative Adversarial Network to perform the style transfer.
-
+- The [sperm-detection branch](https://github.com/SergioHdezG/tree/sper-detection) consist of a fork of [YOLOv5 from ultralytics](https://github.com/ultralytics/yolov5) from ultralitycs adapted to perform our evaluation pipeline on sperm detection.
 <p align="center">
     <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/spermdiffuserabstract.png" width="60%" title="Abstract">
 </p>
@@ -157,65 +157,27 @@ docker run -it --rm --gpus all \
     python /home/code/scripts/train.py --dataset halfcheetah-medium-expert-v2 --logbase logs"
 ```
 
-## Singularity
+[//]: # (## Reference)
 
-1. Build the image:
-```
-singularity build --fakeroot diffuser.sif Singularity.def
-```
+[//]: # (```)
 
-2. Test the image:
-```
-singularity exec --nv --writable-tmpfs diffuser.sif \
-        bash -c \
-        "pip install -e . && \
-        python scripts/train.py --dataset halfcheetah-medium-expert-v2 --logbase logs"
-```
+[//]: # (@inproceedings{janner2022diffuser,)
 
+[//]: # (  title = {Planning with Diffusion for Flexible Behavior Synthesis},)
 
-## Running on Azure
+[//]: # (  author = {Michael Janner and Yilun Du and Joshua B. Tenenbaum and Sergey Levine},)
 
-#### Setup
+[//]: # (  booktitle = {International Conference on Machine Learning},)
 
-1. Tag the Docker image (built in the [Docker section](#Docker)) and push it to Docker Hub:
-```
-export DOCKER_USERNAME=$(docker info | sed '/Username:/!d;s/.* //')
-docker tag diffuser ${DOCKER_USERNAME}/diffuser:latest
-docker image push ${DOCKER_USERNAME}/diffuser
-```
+[//]: # (  year = {2022},)
 
-3. Update [`azure/config.py`](azure/config.py), either by modifying the file directly or setting the relevant [environment variables](azure/config.py#L47-L52). To set the `AZURE_STORAGE_CONNECTION` variable, navigate to the `Access keys` section of your storage account. Click `Show keys` and copy the `Connection string`.
+[//]: # (})
 
-4. Download [`azcopy`](https://docs.microsoft.com/en-us/azure/storage/common/storage-use-azcopy-v10): `./azure/download.sh`
-
-#### Usage
-
-Launch training jobs with `python azure/launch.py`. The launch script takes no command-line arguments; instead, it launches a job for every combination of hyperparameters in [`params_to_sweep`](azure/launch_train.py#L36-L38).
+[//]: # (```)
 
 
-#### Viewing results
+## References
 
-To rsync the results from the Azure storage container, run `./azure/sync.sh`.
-
-To mount the storage container:
-1. Create a blobfuse config with `./azure/make_fuse_config.sh`
-2. Run `./azure/mount.sh` to mount the storage container to `~/azure_mount`
-
-To unmount the container, run `sudo umount -f ~/azure_mount; rm -r ~/azure_mount`
-
-
-## Reference
-```
-@inproceedings{janner2022diffuser,
-  title = {Planning with Diffusion for Flexible Behavior Synthesis},
-  author = {Michael Janner and Yilun Du and Joshua B. Tenenbaum and Sergey Levine},
-  booktitle = {International Conference on Machine Learning},
-  year = {2022},
-}
-```
-
-
-## Acknowledgements
-
-The diffusion model implementation is based on Phil Wang's [denoising-diffusion-pytorch](https://github.com/lucidrains/denoising-diffusion-pytorch) repo.
-The organization of this repo and remote launcher is based on the [trajectory-transformer](https://github.com/jannerm/trajectory-transformer) repo.
+The diffusion model and main branch of this repository is based on Janner et al. [Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser).
+The Cyclical GAN is based on [Tensorflow CycleGAN tutorials](https://www.tensorflow.org/tutorials/generative/cyclegan).
+We use [YOLOv5 from ultralytics](https://github.com/ultralytics/yolov5) for object detection.
