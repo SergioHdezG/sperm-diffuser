@@ -1,97 +1,132 @@
-# Planning with Diffusion &nbsp;&nbsp; [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1YajKhu-CUIGBJeQPehjVPJcK_b38a8Nc?usp=sharing)
+# Real-like Synthetic video of sperm with generative models &nbsp;&nbsp; 
 
+This repository is organized in three brands.
 
-Training and visualizing of diffusion models from [Planning with Diffusion for Flexible Behavior Synthesis](https://diffusion-planning.github.io/).
-
-The [main branch](https://github.com/jannerm/diffuser/tree/main) contains code for training diffusion models and planning via value-function guided sampling on the D4RL locomotion environments.
-The [kuka branch](https://github.com/jannerm/diffuser/tree/kuka) contains block-stacking experiments.
-The [maze2d branch](https://github.com/jannerm/diffuser/tree/maze2d) contains goal-reaching via inpainting in the Maze2D environments.
+- The [main branch](https://github.com/SergioHdezG/sperm-diffuser) contains the diffusion model to generate schematic sperm videos. It includes the pipeline to generate individual spermatozoon trajectories and annotated videos of multiple schematic spermatozoa. This branch makes use of a modified version of the diffusion model proposed by Janner et al. [[Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser)].
+- The [style-transfer branch](https://github.com/SergioHdezG/tree/style-transfer) contains tools to transform the schematic videos generated with the diffusion model into real-like style. This branch makes use of a Cyclical Generative Adversarial Network to perform the style transfer.
 
 <p align="center">
-    <img src="https://diffusion-planning.github.io/images/diffuser-card.png" width="60%" title="Diffuser model">
+    <img src="https://github.com/SergioHdezG/sperm-diffuser/images/spermdiffuserabstract.pdf" width="60%" title="Abstract">
 </p>
 
-**Update 10/17/2022:** A bug in the value function scaling has been fixed in [this commit](https://github.com/jannerm/diffuser/commit/3d7361c2d028473b601cc04f5eecd019e14eb4eb). Thanks to [Philemon Brakel](https://scholar.google.com/citations?user=Q6UMpRYAAAAJ&hl=en) for catching it!
 
-## Quickstart
+[//]: # (## Installation)
 
-Load a pretrained diffusion model and sample from it in your browser with [scripts/diffuser-sample.ipynb](https://colab.research.google.com/drive/1YajKhu-CUIGBJeQPehjVPJcK_b38a8Nc?usp=sharing).
+[//]: # ()
+[//]: # (```)
 
+[//]: # (conda env create -f environment.yml)
 
-## Installation
+[//]: # (conda activate diffuser)
+
+[//]: # (pip install -e .)
+
+[//]: # (```)
+
+## Generate individual spermatozoa trajectories
+
+Two ways to generate new sperm trajectories are provided:
+
+1. If given an initial condition coming from the real dataset ([BezierSplinesData](https://github.com/SergioHdezG/sperm-diffuser/diffuser/datasets/BezierSplinesData)), the model generate new trajectories from the given real initial condition:
 
 ```
-conda env create -f environment.yml
-conda activate diffuser
-pip install -e .
+python scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py -dataset SingleSpermBezierIncrementsDataAugSimplified-v0 -dataset diffuser/datasets/BezierSplinesData/slow
 ```
 
-## Using pretrained models
+2. If no access to the real conditions is available, we allow generation given a random sampled initial condition. These conditions are sampled from a multivariate gaussian distribution fitted to the values of the parameters in the real dataset ([BezierSplinesData](https://github.com/SergioHdezG/sperm-diffuser/diffuser/datasets/BezierSplinesData)). The next program generates a complete dataset of synthetic spermatozoa using the trained diffusion models for progressive, slow progressive and inmotile sperm.
 
-### Downloading weights
-
-Download pretrained diffusion models and value functions with:
 ```
-./scripts/download_pretrained.sh
+python scripts/paper_images/generate_sperms_jsons_dataset_gauss_init.py -dataset SingleSpermBezierIncrementsDataAugSimplified-v0 -dataset ...
 ```
 
-This command downloads and extracts a [tarfile](https://drive.google.com/file/d/1srTq0OFQtWIv9A7fwm3fwh1StA__qr6y/view?usp=sharing) containing [this directory](https://drive.google.com/drive/folders/1ie6z3toz9OjcarJuwjQwXXzDwh1XnS02?usp=sharing) to `logs/pretrained`. The models are organized according to the following structure:
+## Training the model
+
+We provide the real data parameterized using our sperm model in [diffser/datasets/BezierSplinesData](https://github.com/SergioHdezG/sperm-diffuser/diffuser/datasets/BezierSplinesData).
+This dataset is split in progressive, slow progressive and inmotile sperm. The next program enables the training of a model:
+
 ```
-└── logs/pretrained
-    ├── ${environment_1}
-    │   ├── diffusion
-    │   │   └── ${experiment_name}
-    │   │       ├── state_${epoch}.pt
-    │   │       ├── sample-${epoch}-*.png
-    │   │       └── {dataset, diffusion, model, render, trainer}_config.pkl
-    │   └── values
-    │       └── ${experiment_name}
-    │           ├── state_${epoch}.pt
-    │           └── {dataset, diffusion, model, render, trainer}_config.pkl
-    ├── ${environment_2}
-    │   └── ...
+python scripts/train_sperm -dataset SingleSpermBezierIncrementsDataAugSimplified-v0 --logbase logs ...
 ```
-
-The `state_${epoch}.pt` files contain the network weights and the `config.pkl` files contain the instantation arguments for the relevant classes.
-The png files contain samples from different points during training of the diffusion model.
-
-### Planning
-
-To plan with guided sampling, run:
-```
-python scripts/plan_guided.py --dataset halfcheetah-medium-expert-v2 --logbase logs/pretrained
-```
-
-The `--logbase` flag points the [experiment loaders](scripts/plan_guided.py#L22-L30) to the folder containing the pretrained models.
-You can override planning hyperparameters with flags, such as `--batch_size 8`, but the default
-hyperparameters are a good starting point.
-
-**Results.** The current codebase performs a few points better (averaged over environments) than
-described in the arxiv v1 paper due to small tweaks to the architecture and objective. It is also
-somewhat faster. The arxiv paper will be updated shortly to reflect these changes.
-
-## Training from scratch
-
-1. Train a diffusion model with:
-```
-python scripts/train.py --dataset halfcheetah-medium-expert-v2
-```
-
 The default hyperparameters are listed in [locomotion:diffusion](config/locomotion.py#L22-L65).
 You can override any of them with flags, eg, `--n_diffusion_steps 100`.
 
-2. Train a value function with:
-```
-python scripts/train_values.py --dataset halfcheetah-medium-expert-v2
-```
-See [locomotion:values](config/locomotion.py#L67-L108) for the corresponding default hyperparameters.
+[//]: # (### Downloading weights)
+
+[//]: # (Download pretrained diffusion models and value functions with:)
+
+[//]: # (```)
+
+[//]: # (./scripts/download_pretrained.sh)
+
+[//]: # (```)
+
+[//]: # ()
+[//]: # (This command downloads and extracts a [tarfile]&#40;https://drive.google.com/file/d/1srTq0OFQtWIv9A7fwm3fwh1StA__qr6y/view?usp=sharing&#41; containing [this directory]&#40;https://drive.google.com/drive/folders/1ie6z3toz9OjcarJuwjQwXXzDwh1XnS02?usp=sharing&#41; to `logs/pretrained`. The models are organized according to the following structure:)
+
+[//]: # (```)
+
+[//]: # (└── logs/pretrained)
+
+[//]: # (    ├── ${environment_1})
+
+[//]: # (    │   ├── diffusion)
+
+[//]: # (    │   │   └── ${experiment_name})
+
+[//]: # (    │   │       ├── state_${epoch}.pt)
+
+[//]: # (    │   │       ├── sample-${epoch}-*.png)
+
+[//]: # (    │   │       └── {dataset, diffusion, model, render, trainer}_config.pkl)
+
+[//]: # (    │   └── values)
+
+[//]: # (    │       └── ${experiment_name})
+
+[//]: # (    │           ├── state_${epoch}.pt)
+
+[//]: # (    │           └── {dataset, diffusion, model, render, trainer}_config.pkl)
+
+[//]: # (    ├── ${environment_2})
+
+[//]: # (    │   └── ...)
+
+[//]: # (```)
+
+[//]: # (The `state_${epoch}.pt` files contain the network weights and the `config.pkl` files contain the instantation arguments for the relevant classes.)
+
+[//]: # (The png files contain samples from different points during training of the diffusion model.)
+
+[//]: # (### Planning)
+
+[//]: # ()
+[//]: # (To plan with guided sampling, run:)
+
+[//]: # (```)
+
+[//]: # (python scripts/plan_guided.py --dataset halfcheetah-medium-expert-v2 --logbase logs/pretrained)
+
+[//]: # (```)
+
+[//]: # ()
+[//]: # (The `--logbase` flag points the [experiment loaders]&#40;scripts/plan_guided.py#L22-L30&#41; to the folder containing the pretrained models.)
+
+[//]: # (You can override planning hyperparameters with flags, such as `--batch_size 8`, but the default)
+
+[//]: # (hyperparameters are a good starting point.)
 
 
-3. Plan using your newly-trained models with the same command as in the pretrained planning section, simply replacing the logbase to point to your new models:
-```
-python scripts/plan_guided.py --dataset halfcheetah-medium-expert-v2 --logbase logs
-```
-See [locomotion:plans](config/locomotion.py#L110-L149) for the corresponding default hyperparameters.
+
+[//]: # (2. Train a value function with:)
+
+[//]: # (```)
+
+[//]: # (python scripts/train_values.py --dataset halfcheetah-medium-expert-v2)
+
+[//]: # (```)
+
+[//]: # (See [locomotion:values]&#40;config/locomotion.py#L67-L108&#41; for the corresponding default hyperparameters.)
+
 
 **Deferred f-strings.** Note that some planning script arguments, such as `--n_diffusion_steps` or `--discount`,
 do not actually change any logic during planning, but simply load a different model using a deferred f-string.
