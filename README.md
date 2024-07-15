@@ -6,7 +6,7 @@ This repository is organized in three brands.
 - The [style-transfer branch](https://github.com/SergioHdezG/tree/style-transfer) contains tools to transform the schematic videos generated with the diffusion model into real-like style. This branch makes use of a Cyclical Generative Adversarial Network to perform the style transfer.
 
 <p align="center">
-    <img src="https://github.com/SergioHdezG/sperm-diffuser/images/spermdiffuserabstract.pdf" width="60%" title="Abstract">
+    <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/spermdiffuserabstract.pdf" width="60%" title="Abstract">
 </p>
 
 
