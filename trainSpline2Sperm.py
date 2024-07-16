@@ -23,6 +23,7 @@ from spllib.spline_utils import bezierSpline2image
 # =                                   param                                    =
 # ==============================================================================
 
+print()
 py.arg('--output_dir', default='BezierSplines2SingleSpermAugmentation')
 py.arg('--dataset', default='BezierSplines2SingleSperm')
 py.arg('--datasets_dir', default='datasets')
