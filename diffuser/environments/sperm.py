@@ -35,7 +35,7 @@ GET_TRAIN_SET = True
 
 class SingleSpermBezierDeepmimic(gym.Env):
     def __init__(self,
-                 render_mode='rgb_array', data_file='diffuser/datasets/BezierSplinesData/moving'):
+                 render_mode='rgb_array', data_file='diffuser/datasets/BezierSplinesData/moving',  **kwargs):
         self.timesteps = 0
 
         self.action_space = spaces.Box(low=-1, high=1., shape=(13,), dtype=np.float32)
@@ -897,7 +897,15 @@ class SingleSpermBezierIncrementsDataAugSimplified(SingleSpermBezierIncrements):
     # State: [Spline params, velocity vector, correction angle vector]
     # Use jointly with the SequenceDatasetSpermNormalized
     def __init__(self,
-                 render_mode='rgb_array', data_file='diffuser/datasets/BezierSplinesData/slow'):
+                 render_mode='rgb_array', data_file='diffuser/datasets/BezierSplinesData/progressive',  **kwargs):
+
+        # self._dict = {}
+        # for key, val in kwargs.items():
+        #     self._dict[key] = val
+        #
+        # if self._dict.__contains__('data_file'):
+        #     data_file = self._dict['data_file']
+
         self.timesteps = 0
 
         self.action_space = spaces.Box(low=-1, high=1., shape=(2,), dtype=np.float32)
@@ -1253,7 +1261,7 @@ class SingleSpermBezierIncrementsDataAugSimplified(SingleSpermBezierIncrements):
         return dict
 
 class SingleSpermBezierIncrementsSynth(SingleSpermBezierIncrementsDataAug):
-    def __init__(self, render_mode='rgb_array', data_file = 'diffuser/datasets/synthdata/2023-09-25:15-13'):
+    def __init__(self, render_mode='rgb_array', data_file = 'diffuser/datasets/synthdata/2023-09-25:15-13',  **kwargs):
         super().__init__(render_mode=render_mode, data_file = data_file)
 
     def _read_trajectory(self, spline_path, frames=None, num=25, test=False):
@@ -1561,284 +1569,284 @@ class SingleSpermBezierIncrementsSynth(SingleSpermBezierIncrementsDataAug):
             GET_TRAIN_SET = True
         return dict
 
-class SingleSpermBezierIncrementsDataAugMulticlass(SingleSpermBezierIncrementsDataAug):
-    def __init__(self,
-                 render_mode='rgb_array',
-                 data_file=['diffuser/datasets/BezierSplinesData/moving', 'diffuser/datasets/BezierSplinesData/slow', 'diffuser/datasets/BezierSplinesData/stopped']):
-        self.timesteps = 0
-        self.n_cat = len(data_file)
-        self.action_space = spaces.Box(low=-1, high=1., shape=(13,), dtype=np.float32)
-        high = np.array([10. for i in range(108)]).astype(np.float32)
-        low = np.array([-10. for i in range(108)]).astype(np.float32)
-        self.observation_space = spaces.Box(low, high)
-
-        self.data_file = data_file
-
-        video = 'diffuser/datasets/test-1-29-field_1_30/frames'
-
-        self.frames = self._read_frames(video)
-
-        self.states = []
-        self.coords = []
-        self.heads = []
-        self.angles = []
-        self.frames = []
-        self.params = []
-        self.comp_coords = []
-        self.comp_heads = []
-        self.comp_angl = []
-        self.comp_params = []
-
-        for data_files, cat in zip(self.data_file, range(len(self.data_file))):
-            for path, directories, files in os.walk(data_files):
-                print(path)
-                if len(files) > 0 and files[0].endswith('.json'):
-                    states, coords, heads, angles, frames, params, comp_coords, comp_heads, comp_angl, comp_params = self._read_trajectory(path, cat)
-                    self.states.extend(states)
-                    self.coords.extend(coords)
-                    self.heads.extend(heads)
-                    self.angles.extend(angles)
-                    self.frames.extend(frames)
-                    self.params.extend(params)
-                    self.comp_coords.extend(comp_coords)
-                    self.comp_heads.extend(comp_heads)
-                    self.comp_angl.extend(comp_angl)
-                    self.comp_params.extend(comp_params)
-                    break
-
-        self._max_episode_steps = len(self.states)-1
-        self.max_timesteps = 15
-        self.min_timesteps = 5
-        self.step_counter = 0
-
-        self.render_mode = render_mode
-
-        self.current_coords = None
-        self.current_coords1 = None
-        self.current_coords2 = None
-        self.current_head = None
-        self.current_angle = None
-        self.parameters = None
-        self.state0 = None
-        self.state1 = None
-        self.state2 = None
-
-        self.accum_tail_error = 0.
-        self.accum_tail_mom_error = 0.
-
-        self._train_set = None
-        self._test_set = None
-
-    def _read_trajectory(self, spline_path, category, frames=None, num=25, test=False):
-        def displacement(coords, x_rand, y_rand):
-            x_disp = x_rand - coords[0][0]
-            y_disp = y_rand - coords[0][1]
-            coords = np.asarray(coords)
-
-            coords[:, 0] += x_disp
-            coords[:, 1] += y_disp
-            # coords[:, 0] = coords[:, 0]*2-1
-            # coords[:, 1] = coords[:, 1] * 2 - 1
-            return coords[-1, :]
-        states = []
-        coords = []
-        heads = []
-        angles = []
-        params = []
-
-
-        for path, directories, files in os.walk(spline_path):
-            files.sort()
-
-            first_iter = True
-            old_head = [0.0, 0.0]
-
-            rand_rot = random.random() * 2 - 1
-            x_rand = ((random.random()) * 1280) #* 0.9 + 0.05
-            y_rand = ((random.random()) * 1024) #* 0.9 + 0.05
-
-            head_list = []
-            real_head_list = []
-            temp_states = []
-            temp_coords = []
-            temp_heads = []
-            temp_angles = []
-            temp_params = []
-            for f in files:
-                if f.endswith('.json'):
-                    json_data = read_json(os.path.join(path, f))
-                    point_pairs = np.asarray(json_data['spline_line_space'])
-                    parameters = np.asarray(json_data['spline_params'])/70.-1
-
-                    # point_pairs = np.concatenate([np.expand_dims(curve[:, 0], axis=-1), np.expand_dims(curve[:, 1], axis=-1)], axis=-1)
-                    point_pairs[:, 0] = point_pairs[:, 0]/70. - 1
-                    point_pairs[:, 1] = point_pairs[:, 1]/70. - 1
-
-                    ravel_point_pairs = np.ravel(point_pairs)
-
-                    if not test:
-                        angle = (((json_data['correction_angle']/180 + rand_rot)+1) % 2) -1.
-
-                        head = json_data['head_coordinates']
-                        head = [head[0], 1024-head[1], head[2]]
-                        real_head_list.append(head)
-                        rot = mpl.transforms.Affine2D().rotate_deg(rand_rot * 180)
-                        rot_heads = rot.transform(np.asarray(head[:-1]))
-                        head_list.append(rot_heads)
-
-                        head = [*displacement(np.asarray(head_list), x_rand, y_rand), head[-1]]
-                    else:
-                        angle = (((json_data['correction_angle'] / 180) + 1) % 2) - 1.
-
-                        head = json_data['head_coordinates']
-                        head = [head[0], 1024-head[1], head[2]]
-                        real_head_list.append(head)
-
-                    if first_iter:
-                        old_head[0] = head[0]
-                        old_head[1] = head[1]
-                        first_iter = False
-                    head_displacement = np.clip([float(head[0]-old_head[0])/20., float(head[1]-old_head[1])/20.], -1.0, 1.0)
-                    old_head[0] = head[0]
-                    old_head[1] = head[1]
-                    head[0] = (head[0] / 1280)*2 - 1
-                    head[1] = (head[1] / 1024)*2 - 1
-
-
-                    temp_states.append(np.concatenate([ravel_point_pairs, np.ravel(parameters), [category/self.n_cat], head_displacement, [angle], head], axis=0))
-                    temp_coords.append(point_pairs)
-                    temp_heads.append(head)
-                    temp_angles.append(angle)
-                    temp_params.append(parameters)
-
-                    # states.append(np.concatenate([ravel_point_pairs, np.ravel(parameters), head_displacement, [angle], head], axis=0))
-                    # coords.append(point_pairs)
-                    # heads.append(head)
-                    # angles.append(angle)
-                    # params.append(parameters)
-
-            if not np.any(np.array(temp_heads)[:, :-1] > 1) and not np.any(np.array(temp_heads)[:, :-1] < -1):
-                states.extend(temp_states)
-                coords.extend(temp_coords)
-                heads.extend(temp_heads)
-                angles.extend(temp_angles)
-                params.extend(temp_params)
-
-        new_states = []
-        new_coords = []
-        new_heads = []
-        new_angles = []
-        new_frames = []
-        new_params = []
-        for i in range(len(states)):
-            new_states.append(states[i][:-1])  #np.concatenate([states[i][:-1], states[j][:-1]]))
-            new_coords.append(coords[i])
-            new_heads.append(heads[i])
-            new_angles.append(angles[i])
-            if frames is not None:
-                new_frames.append(frames[i])
-            new_params.append(params[i])
-        return new_states, new_coords, new_heads, new_angles, new_frames, new_params, coords, heads, angles, params
-
-    def get_dataset(self):
-        n_augmentation = 25
-        train_states_to_save = []
-        train_actions_to_save = []
-        train_next_states_to_save = []
-        train_terminals_to_save = []
-        test_states_to_save = []
-        test_actions_to_save = []
-        test_next_states_to_save = []
-        test_terminals_to_save = []
-
-
-        random.seed(1)
-        np.random.seed(1)
-
-
-
-        traj_files = []
-        for data_files, cat in zip(self.data_file, range(len(self.data_file))):
-            for path, directories, files in os.walk(data_files):
-                print(path)
-                if len(files) > 0 and files[0].endswith('.json'):
-                    traj_files.append([path, files, cat])
-
-        num_to_choose = int(len(traj_files) * 0.2)
-        test_indices = np.random.choice(range(len(traj_files)), size=num_to_choose, replace=False)
-        train_indices = np.setdiff1d(range(len(traj_files)), test_indices)
-        for i in range(n_augmentation):
-            for [path, files, cat] in np.asarray(traj_files)[train_indices]:
-                print(path)
-                if len(files) > 0 and files[0].endswith('.json'):
-
-                    self.states, self.coords, self.heads, self.angles, self.frames, self.params, self.comp_coords, self.comp_heads, self.comp_angl, self.comp_params = self._read_trajectory(
-                        path, cat)
-                    states = self.states[:-1]
-                    if len(states) > 0:
-                        next_states = self.states[1:]
-                        actions = [np.concatenate([np.ravel(p), [a], [(h[0]-p_h[0])*102.4, (h[1]-p_h[1])*128]], axis=0) for p, a, h, p_h in
-                                   zip(self.params[1:], self.angles[1:], self.heads[1:], self.heads[:-1])]
-                        terminals = np.concatenate([np.asarray(states[1:])[:, -1] == 0.0, [True]])
-
-                        train_states_to_save.extend(states)
-                        train_actions_to_save.extend(actions)
-                        train_next_states_to_save.extend(next_states)
-                        train_terminals_to_save.extend(terminals)
-
-
-        train_dict = {'actions': np.asarray(train_actions_to_save, dtype=np.float32),
-                # 'infos/action_log_probs': np.ones((states.shape[0], 1),
-                # 'infos/qpos': np.ones((states.shape[0], 1),
-                # 'infos/qvel': np.ones((states.shape[0], 1),
-                'next:observations': np.asarray(train_next_states_to_save, dtype=np.float32),
-                'observations': np.asarray(train_states_to_save, dtype=np.float32),
-                'rewards': np.ones((len(train_actions_to_save), 1)),
-                'terminals': np.array(train_terminals_to_save),
-                'timeouts': np.zeros((len(train_actions_to_save), 1)),
-                }
-
-        self._train_set = train_dict
-
-        for [path, files, cat] in np.asarray(traj_files)[test_indices]:
-            print(path)
-            if len(files) > 0 and files[0].endswith('.json'):
-                self.states, self.coords, self.heads, self.angles, self.frames, self.params, self.comp_coords, self.comp_heads, self.comp_angl, self.comp_params = self._read_trajectory(
-                    path, cat, test=True)
-
-                states = self.states[:-1]
-                next_states = self.states[1:]
-                actions = [np.concatenate([np.ravel(p), [a], [(h[0] - p_h[0]) * 102.4, (h[1] - p_h[1]) * 128]], axis=0)
-                           for p, a, h, p_h in
-                           zip(self.params[1:], self.angles[1:], self.heads[1:], self.heads[:-1])]
-                terminals = np.concatenate([np.asarray(states[1:])[:, -1] == 0.0, [True]])
-
-                test_states_to_save.extend(states)
-                test_actions_to_save.extend(actions)
-                test_next_states_to_save.extend(next_states)
-                test_terminals_to_save.extend(terminals)
-
-        test_dict = {'actions': np.asarray(test_actions_to_save, dtype=np.float32),
-                # 'infos/action_log_probs': np.ones((states.shape[0], 1),
-                # 'infos/qpos': np.ones((states.shape[0], 1),
-                # 'infos/qvel': np.ones((states.shape[0], 1),
-                'next:observations': np.asarray(test_next_states_to_save, dtype=np.float32),
-                'observations': np.asarray(test_states_to_save, dtype=np.float32),
-                'rewards': np.ones((len(test_actions_to_save), 1)),
-                'terminals': np.asarray(test_terminals_to_save),
-                'timeouts': np.zeros((len(test_actions_to_save), 1)),
-                }
-
-        self._test_set = test_dict
-
-        global GET_TRAIN_SET
-        if GET_TRAIN_SET:
-            dict = self._train_set
-            GET_TRAIN_SET = False
-        else:
-            dict = self._test_set
-            GET_TRAIN_SET = True
-        return dict
+# class SingleSpermBezierIncrementsDataAugMulticlass(SingleSpermBezierIncrementsDataAug):
+#     def __init__(self,
+#                  render_mode='rgb_array',
+#                  data_file=['diffuser/datasets/BezierSplinesData/moving', 'diffuser/datasets/BezierSplinesData/slow', 'diffuser/datasets/BezierSplinesData/stopped'],  **kwargs):
+#         self.timesteps = 0
+#         self.n_cat = len(data_file)
+#         self.action_space = spaces.Box(low=-1, high=1., shape=(13,), dtype=np.float32)
+#         high = np.array([10. for i in range(108)]).astype(np.float32)
+#         low = np.array([-10. for i in range(108)]).astype(np.float32)
+#         self.observation_space = spaces.Box(low, high)
+#
+#         self.data_file = data_file
+#
+#         video = 'diffuser/datasets/test-1-29-field_1_30/frames'
+#
+#         self.frames = self._read_frames(video)
+#
+#         self.states = []
+#         self.coords = []
+#         self.heads = []
+#         self.angles = []
+#         self.frames = []
+#         self.params = []
+#         self.comp_coords = []
+#         self.comp_heads = []
+#         self.comp_angl = []
+#         self.comp_params = []
+#
+#         for data_files, cat in zip(self.data_file, range(len(self.data_file))):
+#             for path, directories, files in os.walk(data_files):
+#                 print(path)
+#                 if len(files) > 0 and files[0].endswith('.json'):
+#                     states, coords, heads, angles, frames, params, comp_coords, comp_heads, comp_angl, comp_params = self._read_trajectory(path, cat)
+#                     self.states.extend(states)
+#                     self.coords.extend(coords)
+#                     self.heads.extend(heads)
+#                     self.angles.extend(angles)
+#                     self.frames.extend(frames)
+#                     self.params.extend(params)
+#                     self.comp_coords.extend(comp_coords)
+#                     self.comp_heads.extend(comp_heads)
+#                     self.comp_angl.extend(comp_angl)
+#                     self.comp_params.extend(comp_params)
+#                     break
+#
+#         self._max_episode_steps = len(self.states)-1
+#         self.max_timesteps = 15
+#         self.min_timesteps = 5
+#         self.step_counter = 0
+#
+#         self.render_mode = render_mode
+#
+#         self.current_coords = None
+#         self.current_coords1 = None
+#         self.current_coords2 = None
+#         self.current_head = None
+#         self.current_angle = None
+#         self.parameters = None
+#         self.state0 = None
+#         self.state1 = None
+#         self.state2 = None
+#
+#         self.accum_tail_error = 0.
+#         self.accum_tail_mom_error = 0.
+#
+#         self._train_set = None
+#         self._test_set = None
+#
+#     def _read_trajectory(self, spline_path, category, frames=None, num=25, test=False):
+#         def displacement(coords, x_rand, y_rand):
+#             x_disp = x_rand - coords[0][0]
+#             y_disp = y_rand - coords[0][1]
+#             coords = np.asarray(coords)
+#
+#             coords[:, 0] += x_disp
+#             coords[:, 1] += y_disp
+#             # coords[:, 0] = coords[:, 0]*2-1
+#             # coords[:, 1] = coords[:, 1] * 2 - 1
+#             return coords[-1, :]
+#         states = []
+#         coords = []
+#         heads = []
+#         angles = []
+#         params = []
+#
+#
+#         for path, directories, files in os.walk(spline_path):
+#             files.sort()
+#
+#             first_iter = True
+#             old_head = [0.0, 0.0]
+#
+#             rand_rot = random.random() * 2 - 1
+#             x_rand = ((random.random()) * 1280) #* 0.9 + 0.05
+#             y_rand = ((random.random()) * 1024) #* 0.9 + 0.05
+#
+#             head_list = []
+#             real_head_list = []
+#             temp_states = []
+#             temp_coords = []
+#             temp_heads = []
+#             temp_angles = []
+#             temp_params = []
+#             for f in files:
+#                 if f.endswith('.json'):
+#                     json_data = read_json(os.path.join(path, f))
+#                     point_pairs = np.asarray(json_data['spline_line_space'])
+#                     parameters = np.asarray(json_data['spline_params'])/70.-1
+#
+#                     # point_pairs = np.concatenate([np.expand_dims(curve[:, 0], axis=-1), np.expand_dims(curve[:, 1], axis=-1)], axis=-1)
+#                     point_pairs[:, 0] = point_pairs[:, 0]/70. - 1
+#                     point_pairs[:, 1] = point_pairs[:, 1]/70. - 1
+#
+#                     ravel_point_pairs = np.ravel(point_pairs)
+#
+#                     if not test:
+#                         angle = (((json_data['correction_angle']/180 + rand_rot)+1) % 2) -1.
+#
+#                         head = json_data['head_coordinates']
+#                         head = [head[0], 1024-head[1], head[2]]
+#                         real_head_list.append(head)
+#                         rot = mpl.transforms.Affine2D().rotate_deg(rand_rot * 180)
+#                         rot_heads = rot.transform(np.asarray(head[:-1]))
+#                         head_list.append(rot_heads)
+#
+#                         head = [*displacement(np.asarray(head_list), x_rand, y_rand), head[-1]]
+#                     else:
+#                         angle = (((json_data['correction_angle'] / 180) + 1) % 2) - 1.
+#
+#                         head = json_data['head_coordinates']
+#                         head = [head[0], 1024-head[1], head[2]]
+#                         real_head_list.append(head)
+#
+#                     if first_iter:
+#                         old_head[0] = head[0]
+#                         old_head[1] = head[1]
+#                         first_iter = False
+#                     head_displacement = np.clip([float(head[0]-old_head[0])/20., float(head[1]-old_head[1])/20.], -1.0, 1.0)
+#                     old_head[0] = head[0]
+#                     old_head[1] = head[1]
+#                     head[0] = (head[0] / 1280)*2 - 1
+#                     head[1] = (head[1] / 1024)*2 - 1
+#
+#
+#                     temp_states.append(np.concatenate([ravel_point_pairs, np.ravel(parameters), [category/self.n_cat], head_displacement, [angle], head], axis=0))
+#                     temp_coords.append(point_pairs)
+#                     temp_heads.append(head)
+#                     temp_angles.append(angle)
+#                     temp_params.append(parameters)
+#
+#                     # states.append(np.concatenate([ravel_point_pairs, np.ravel(parameters), head_displacement, [angle], head], axis=0))
+#                     # coords.append(point_pairs)
+#                     # heads.append(head)
+#                     # angles.append(angle)
+#                     # params.append(parameters)
+#
+#             if not np.any(np.array(temp_heads)[:, :-1] > 1) and not np.any(np.array(temp_heads)[:, :-1] < -1):
+#                 states.extend(temp_states)
+#                 coords.extend(temp_coords)
+#                 heads.extend(temp_heads)
+#                 angles.extend(temp_angles)
+#                 params.extend(temp_params)
+#
+#         new_states = []
+#         new_coords = []
+#         new_heads = []
+#         new_angles = []
+#         new_frames = []
+#         new_params = []
+#         for i in range(len(states)):
+#             new_states.append(states[i][:-1])  #np.concatenate([states[i][:-1], states[j][:-1]]))
+#             new_coords.append(coords[i])
+#             new_heads.append(heads[i])
+#             new_angles.append(angles[i])
+#             if frames is not None:
+#                 new_frames.append(frames[i])
+#             new_params.append(params[i])
+#         return new_states, new_coords, new_heads, new_angles, new_frames, new_params, coords, heads, angles, params
+#
+#     def get_dataset(self):
+#         n_augmentation = 25
+#         train_states_to_save = []
+#         train_actions_to_save = []
+#         train_next_states_to_save = []
+#         train_terminals_to_save = []
+#         test_states_to_save = []
+#         test_actions_to_save = []
+#         test_next_states_to_save = []
+#         test_terminals_to_save = []
+#
+#
+#         random.seed(1)
+#         np.random.seed(1)
+#
+#
+#
+#         traj_files = []
+#         for data_files, cat in zip(self.data_file, range(len(self.data_file))):
+#             for path, directories, files in os.walk(data_files):
+#                 print(path)
+#                 if len(files) > 0 and files[0].endswith('.json'):
+#                     traj_files.append([path, files, cat])
+#
+#         num_to_choose = int(len(traj_files) * 0.2)
+#         test_indices = np.random.choice(range(len(traj_files)), size=num_to_choose, replace=False)
+#         train_indices = np.setdiff1d(range(len(traj_files)), test_indices)
+#         for i in range(n_augmentation):
+#             for [path, files, cat] in np.asarray(traj_files)[train_indices]:
+#                 print(path)
+#                 if len(files) > 0 and files[0].endswith('.json'):
+#
+#                     self.states, self.coords, self.heads, self.angles, self.frames, self.params, self.comp_coords, self.comp_heads, self.comp_angl, self.comp_params = self._read_trajectory(
+#                         path, cat)
+#                     states = self.states[:-1]
+#                     if len(states) > 0:
+#                         next_states = self.states[1:]
+#                         actions = [np.concatenate([np.ravel(p), [a], [(h[0]-p_h[0])*102.4, (h[1]-p_h[1])*128]], axis=0) for p, a, h, p_h in
+#                                    zip(self.params[1:], self.angles[1:], self.heads[1:], self.heads[:-1])]
+#                         terminals = np.concatenate([np.asarray(states[1:])[:, -1] == 0.0, [True]])
+#
+#                         train_states_to_save.extend(states)
+#                         train_actions_to_save.extend(actions)
+#                         train_next_states_to_save.extend(next_states)
+#                         train_terminals_to_save.extend(terminals)
+#
+#
+#         train_dict = {'actions': np.asarray(train_actions_to_save, dtype=np.float32),
+#                 # 'infos/action_log_probs': np.ones((states.shape[0], 1),
+#                 # 'infos/qpos': np.ones((states.shape[0], 1),
+#                 # 'infos/qvel': np.ones((states.shape[0], 1),
+#                 'next:observations': np.asarray(train_next_states_to_save, dtype=np.float32),
+#                 'observations': np.asarray(train_states_to_save, dtype=np.float32),
+#                 'rewards': np.ones((len(train_actions_to_save), 1)),
+#                 'terminals': np.array(train_terminals_to_save),
+#                 'timeouts': np.zeros((len(train_actions_to_save), 1)),
+#                 }
+#
+#         self._train_set = train_dict
+#
+#         for [path, files, cat] in np.asarray(traj_files)[test_indices]:
+#             print(path)
+#             if len(files) > 0 and files[0].endswith('.json'):
+#                 self.states, self.coords, self.heads, self.angles, self.frames, self.params, self.comp_coords, self.comp_heads, self.comp_angl, self.comp_params = self._read_trajectory(
+#                     path, cat, test=True)
+#
+#                 states = self.states[:-1]
+#                 next_states = self.states[1:]
+#                 actions = [np.concatenate([np.ravel(p), [a], [(h[0] - p_h[0]) * 102.4, (h[1] - p_h[1]) * 128]], axis=0)
+#                            for p, a, h, p_h in
+#                            zip(self.params[1:], self.angles[1:], self.heads[1:], self.heads[:-1])]
+#                 terminals = np.concatenate([np.asarray(states[1:])[:, -1] == 0.0, [True]])
+#
+#                 test_states_to_save.extend(states)
+#                 test_actions_to_save.extend(actions)
+#                 test_next_states_to_save.extend(next_states)
+#                 test_terminals_to_save.extend(terminals)
+#
+#         test_dict = {'actions': np.asarray(test_actions_to_save, dtype=np.float32),
+#                 # 'infos/action_log_probs': np.ones((states.shape[0], 1),
+#                 # 'infos/qpos': np.ones((states.shape[0], 1),
+#                 # 'infos/qvel': np.ones((states.shape[0], 1),
+#                 'next:observations': np.asarray(test_next_states_to_save, dtype=np.float32),
+#                 'observations': np.asarray(test_states_to_save, dtype=np.float32),
+#                 'rewards': np.ones((len(test_actions_to_save), 1)),
+#                 'terminals': np.asarray(test_terminals_to_save),
+#                 'timeouts': np.zeros((len(test_actions_to_save), 1)),
+#                 }
+#
+#         self._test_set = test_dict
+#
+#         global GET_TRAIN_SET
+#         if GET_TRAIN_SET:
+#             dict = self._train_set
+#             GET_TRAIN_SET = False
+#         else:
+#             dict = self._test_set
+#             GET_TRAIN_SET = True
+#         return dict
 
 def read_json(path):
     with open(path, 'r') as openfile:

@@ -36,7 +36,7 @@ render_config = utils.ConfigTrainTest(
     env=args.dataset,
 )
 
-dataset, testset = dataset_config()
+dataset, testset = dataset_config(data_file=args.data_file)
 renderer, _ = render_config()
 
 observation_dim = dataset.observation_dim
