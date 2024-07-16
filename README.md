@@ -62,12 +62,3 @@ python scripts/train_sperm.py --horizon 16 --sample_freq 250 --diffusion models.
 python scripts/train_sperm.py --horizon 16 --sample_freq 250 --diffusion models.GaussianDiffusionImitationCondition --n_train_steps 10000 --n_steps_per_epoch 2000 --save_freq 1000 --action_weight 0 --loader datasets.SequenceDatasetSpermNormalized --loss_type sperm_loss --renderer utils.EMARenderer --n_diffusion_steps 20 --learning_rate 2e-5 ----data_file diffuser/datasets/BezierSplinesData/inmotile
 ```
 
-
-## Docker
-
-1. Build the image:
-```
-docker build -f Dockerfile . -t diffuser
-```
-
-
