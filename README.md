@@ -1,6 +1,6 @@
-# Real-like Synthetic video of sperm with generative models &nbsp;&nbsp; 
+# Real-like synthetic sperm video generation from learnt behaviours &nbsp;&nbsp; 
 
-This repository is organized in three brands.
+This repository is organized in three branches.
 
 - The [main branch](https://github.com/SergioHdezG/sperm-diffuser) contains the diffusion model to generate schematic sperm videos. It includes the pipeline to generate individual spermatozoon trajectories and annotated videos of multiple schematic spermatozoa. This branch makes use of a modified version of the diffusion model proposed by Janner et al. [[Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser)].
 - The [style-transfer branch](https://github.com/SergioHdezG/tree/style-transfer) contains tools to transform the schematic videos generated with the diffusion model into real-like style. This branch makes use of a Cyclical Generative Adversarial Network to perform the style transfer.

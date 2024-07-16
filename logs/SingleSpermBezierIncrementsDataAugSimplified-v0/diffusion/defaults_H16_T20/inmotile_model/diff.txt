@@ -1,0 +1,620 @@
+diff --git a/diffuser/environments/sperm.py b/diffuser/environments/sperm.py
+index a7edf10..39fbfa6 100644
+--- a/diffuser/environments/sperm.py
++++ b/diffuser/environments/sperm.py
+@@ -897,7 +897,7 @@ class SingleSpermBezierIncrementsDataAugSimplified(SingleSpermBezierIncrements):
+     # State: [Spline params, velocity vector, correction angle vector]
+     # Use jointly with the SequenceDatasetSpermNormalized
+     def __init__(self,
+-                 render_mode='rgb_array', data_file='diffuser/datasets/BezierSplinesData/moving'):
++                 render_mode='rgb_array', data_file='diffuser/datasets/BezierSplinesData/stopped'):
+         self.timesteps = 0
+ 
+         self.action_space = spaces.Box(low=-1, high=1., shape=(2,), dtype=np.float32)
+diff --git a/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py b/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
+index f04f619..ef1885c 100644
+--- a/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
++++ b/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
+@@ -18,6 +18,26 @@ from scipy.special import rel_entr
+ from scipy.stats import wasserstein_distance
+ from frechetdist import frdist
+ 
++colors = {
++    'blue':    '#377eb8',
++    'orange':  '#ff7f00',
++    'green':   '#4daf4a',
++    'pink':    '#f781bf',
++    'brown':   '#a65628',
++    'purple':  '#984ea3',
++    'gray':    '#999999',
++    'red':     '#e41a1c',
++    'yellow':  '#dede00'
++}
++
++mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=list(colors.values()))
++
++
++def rotate2Dvec(v, theta):
++    c, s = np.cos(theta), np.sin(theta)
++    r = np.array(((c, -s), (s, c)))
++    v = np.dot(r, v)
++    return v
+ 
+ #-----------------------------------------------------------------------------#
+ #----------------------------------- setup -----------------------------------#
+@@ -29,12 +49,12 @@ class Parser(utils.Parser):
+ 
+ args = Parser().parse_args('diffusion')
+ 
+-save_figures = False
+-data_file = 'diffuser/datasets/BezierSplinesData/stopped'
++save_figures = True
++data_file = 'diffuser/datasets/BezierSplinesData/moving'
+ 
+-synth_data_file = 'diffuser/datasets/synthdata_stopped_sperm_real_init_cond_test'
++synth_data_file = 'diffuser/datasets/synthdata_moving_sperm_real_init_cond_test_multi2/'
+ 
+-gauss_data_file = 'diffuser/datasets/synthdata_GaussModel_20240229/2024-02-09:16-41'
++gauss_data_file = 'diffuser/datasets/synthdata_GaussModel_20240229'
+ 
+ #-----------------------------------------------------------------------------#
+ #------------------------------loading real data------------------------------#
+@@ -65,29 +85,44 @@ gaussset = gaussset['observations']
+ min_shape = np.min([te.shape[0] for te in testset])
+ synthset = [sy[:min_shape] for sy in synthset]
+ gaus_index = [np.random.randint(0, len(gaussset)) for i in range(len(testset))]
+-gaussset = [sy[:min_shape] for sy in gaussset]
++gaussset = [ga[:min_shape] for ga in gaussset]
+ gaussset = [gaussset[i] for i in gaus_index]
+ testset = [te[:min_shape] for te in testset]
+ 
+ synth_params = [sy[:, 40:50] for sy in synthset]
+ test_params = [te[:, 40:50] for te in testset]
+-gauss_params = [te[:, 40:50] for te in gaussset]
++gauss_params = [ga[:, 40:50] for ga in gaussset]
+ 
+ synth_displacement = [sy[1:, -5:-3] for sy in synthset]
+ test_displacement = [te[1:, -5:-3] for te in testset]
+-gauss_displacement = [te[1:, -5:-3] for te in gaussset]
++gauss_displacement = [ga[1:, -5:-3] for ga in gaussset]
++
++for i in range(len(synth_displacement)):
++    angle = np.radians(vec2angle(synth_displacement[i][0], normalize=False))
++    for j in range(synth_displacement[i].shape[0]):
++        synth_displacement[i][j] = rotate2Dvec(np.array(synth_displacement[i][j]), -angle)
++for i in range(len(test_displacement)):
++    angle = np.radians(vec2angle(test_displacement[i][0], normalize=False))
++    for j in range(test_displacement[i].shape[0]):
++        test_displacement[i][j] = rotate2Dvec(np.array(test_displacement[i][j]), -angle)
++for i in range(len(gauss_displacement)):
++    angle = np.radians(vec2angle(gauss_displacement[i][0], normalize=False))
++    for j in range(gauss_displacement[i].shape[0]):
++        gauss_displacement[i][j] = rotate2Dvec(np.array(gauss_displacement[i][j]), -angle)
++
++
+ 
+ synth_alpha = [sy[:, -3] for sy in synthset]
+ test_alpha = [te[:, -3] for te in testset]
+-gauss_alpha = [te[:, -3] for te in gaussset]
++gauss_alpha = [ga[:, -3] for ga in gaussset]
+ 
+ synth_head_coord = [sy[:, -2:] for sy in synthset]
+ test_head_coord = [te[:, -2:] for te in testset]
+-gauss_head_coord = [te[:, -2:] for te in gaussset]
++gauss_head_coord = [ga[:, -2:] for ga in gaussset]
+ 
+ synth2measure = [sy[:, 40:-2] for sy in synthset]
+ test2measure = [te[:, 40:-2] for te in testset]
+-gauss2measure = [te[:, 40:-2] for te in gaussset]
++gauss2measure = [ga[:, 40:-2] for ga in gaussset]
+ 
+ def average_displacement_error(dataset1, dataset2):
+     """
+@@ -120,6 +155,114 @@ def average_displacement_error(dataset1, dataset2):
+     ade = total_distance / (num_curves * min_length)
+     return ade
+ 
++
++def average_displacement_error_multiples_samples(dataset1, dataset2, n_samples=10):
++    """
++    Calculate the Average Displacement Error (ADE) between two datasets of curves.
++
++    Args:
++    - dataset1: List of numpy arrays representing curves in dataset 1
++    - dataset2: List of numpy arrays representing curves in dataset 2
++
++    Returns:
++    - ade: Average Displacement Error
++    """
++    total_distance = 0
++    num_curves = len(dataset2)
++
++    for i, curve1 in enumerate(dataset2):
++        # Create a list to store distances for each synthetic example
++        distances_sum = 0
++
++        for j in range(n_samples):
++            # Get the corresponding synthetic example from dataset1
++            curve2 = dataset1[n_samples * i + j]
++
++            # Ensure curves have the same number of points
++            min_length = min(len(curve1), len(curve2))
++            curve1 = curve1[:min_length]
++            curve2 = curve2[:min_length]
++
++            # Compute the Euclidean distance between corresponding points
++            distances = np.linalg.norm(curve1 - curve2, axis=1)
++            distances_sum += np.sum(distances)
++
++        # Average the distances for all synthetic examples
++        average_distance = distances_sum / n_samples
++
++        # Add the average distance to the total distance
++        total_distance += average_distance
++
++    # Calculate the average displacement error
++    ade = total_distance / num_curves
++    return ade
++
++def min_average_displacement_error(dataset1, dataset2, n_samples=10):
++    """
++    Calculate the minimum Average Displacement Error (minADE) between two datasets of curves.
++
++    Args:
++    - dataset1: List of numpy arrays representing curves in dataset 1
++    - dataset2: List of numpy arrays representing curves in dataset 2
++
++    Returns:
++    - min_ade: Minimum Average Displacement Error
++    """
++    min_ade = float('inf')  # Initialize min_ade with infinity
++
++    for i, curve1 in enumerate(dataset2):
++        # Create a list to store distances for each synthetic example
++        distances_sum = 0
++
++        for j in range(n_samples):
++            # Get the corresponding synthetic example from dataset2
++            curve2 = dataset1[n_samples * i + j]
++
++            # Ensure curves have the same number of points
++            min_length = min(len(curve1), len(curve2))
++            curve1 = curve1[:min_length]
++            curve2 = curve2[:min_length]
++
++            # Compute the Euclidean distance between corresponding points
++            distances = np.linalg.norm(curve1 - curve2, axis=1)
++            distances_sum += np.sum(distances)
++
++        # Average the distances for all synthetic examples
++        average_distance = distances_sum / n_samples
++
++        # Update min_ade if the average_distance is smaller
++        min_ade = min(min_ade, average_distance)
++
++    return min_ade
++
++def wasserstain_distance_multi(dataset1, dataset2, n_samples=10):
++    """
++    Compare each instance from dataset 1 with the n_samples corresponding instances in dataset 2.
++
++    Args:
++    - dataset1: List of numpy arrays representing instances in dataset 1
++    - dataset2: List of numpy arrays representing instances in dataset 2
++
++    Returns:
++    - wasserstein_distances: List of Wasserstein distances between each instance in dataset1 and its 10 corresponding instances in dataset2
++    """
++    wasserstein_distances = []
++
++    for instance1 in dataset2:
++        instance_distances = []
++
++        for i in range(0, len(dataset1), n_samples):
++            # Take 10 instances from dataset2 corresponding to the current instance1
++            instances2 = dataset1[i:i+n_samples]
++
++            # Compute the Wasserstein distance between instance1 and each instance2
++            instance_distances.extend([wasserstein_distance(instance1.flatten(), instance2.flatten()) for instance2 in instances2])
++
++        # Append the minimum Wasserstein distance to the list of distances
++        wasserstein_distances.append(min(instance_distances))
++
++    return np.mean(wasserstein_distances)
++
+ def final_displacement_error(dataset1, dataset2):
+     """
+     Calculate the Final Displacement Error (FDE) between two datasets of trajectories.
+@@ -154,101 +297,254 @@ def final_displacement_error(dataset1, dataset2):
+ 
+ count = 0
+ for i in range(0, 9, 2):
+-    dist_params = wasserstein_distance(np.concatenate(synth_params)[:, i:i+2].flatten(), np.concatenate(test_params)[:, i:i+2].flatten())
+-    ADE_params = average_displacement_error(np.array(synth_params)[:, :, i:i+2], np.array(test_params)[:, :, i:i+2])
++
++    if len(synth_params) == len(test_params):
++        ADE_params = average_displacement_error(np.array(synth_params)[:, :, i:i + 2],
++                                                np.array(test_params)[:, :, i:i + 2])
++        dist_params = wasserstein_distance(np.concatenate(synth_params)[:, i:i + 2].flatten(),
++                                           np.concatenate(test_params)[:, i:i + 2].flatten())
++
++    else:
++        n_samples = len(synth_params)//len(test_params)
++        ADE_params = average_displacement_error_multiples_samples(np.array(synth_params)[:, :, i:i + 2], np.array(test_params)[:, :, i:i + 2], n_samples)
++        dist_params = wasserstain_distance_multi(np.array(synth_params)[:, i:i + 2], np.array(test_params)[:, i:i + 2], n_samples)
++        minADE_params = min_average_displacement_error(np.array(synth_params)[:, :, i:i + 2],
++                                                np.array(test_params)[:, :, i:i + 2], n_samples)
++        print('minADE(synthP_' + str(4 - count) + ', realP-' + str(4 - count) + '): ', minADE_params)
++
+     print('W(synthP_' + str(4-count) + ', realP_' + str(4-count) +'): ' + str(dist_params))
+     print('ADE(synthP_' + str(4-count) + ', realP-' + str(4-count) +'): ', ADE_params)
+ 
+-    dist_params = wasserstein_distance(np.concatenate(gauss_params)[:, i:i+2].flatten(), np.concatenate(test_params)[:, i:i+2].flatten())
+-    ADE_params = average_displacement_error(np.array(gauss_params)[:, :, i:i+2], np.array(test_params)[:, :, i:i+2])
++    if len(synth_params) == len(test_params):
++        dist_params = wasserstein_distance(np.concatenate(gauss_params)[:, i:i+2].flatten(), np.concatenate(test_params)[:, i:i+2].flatten())
++        ADE_params = average_displacement_error(np.array(gauss_params)[:, :, i:i+2], np.array(test_params)[:, :, i:i+2])
++    else:
++        n_samples = len(gauss_params) // len(test_params)
++        ADE_params = average_displacement_error_multiples_samples(np.array(gauss_params)[:, :, i:i + 2],
++                                                                  np.array(test_params)[:, :, i:i + 2], n_samples)
++        dist_params = wasserstain_distance_multi(np.array(gauss_params)[:, i:i + 2], np.array(test_params)[:, i:i + 2],
++                                                 n_samples)
++        minADE_params = min_average_displacement_error(np.array(gauss_params)[:, :, i:i + 2],
++                                                       np.array(test_params)[:, :, i:i + 2], n_samples)
++        print('minADE(gaussP_' + str(4 - count) + ', realP-' + str(4 - count) + '): ', minADE_params)
++
+     print('W(gaussP_' + str(4-count) + ', realP_' + str(4-count) +'): ' + str(dist_params))
+     print('ADE(gaussP_' + str(4-count) + ', realP-' + str(4-count) +'): ', ADE_params)
+ 
+     count += 1
+ 
+-dist_params = wasserstein_distance(np.concatenate(synth_params).flatten(), np.concatenate(test_params).flatten())
+-ADE_params = average_displacement_error(synth_params, test_params)
+-frechet_dist = frdist(synth_params, test_params)
+-print('\n\nW(synthP, realP): ', dist_params)
+-print('F(synthP, realP): ', frechet_dist)
+-print('ADE(synthP_, realP): ', ADE_params, '\n')
++if len(synth_params) == len(test_params):
++    dist_params = wasserstein_distance(np.concatenate(synth_params).flatten(), np.concatenate(test_params).flatten())
++    ADE_params = average_displacement_error(synth_params, test_params)
++    frechet_dist = frdist(synth_params, test_params)
++    print('\n\nW(synthP, realP): ', dist_params)
++    print('F(synthP, realP): ', frechet_dist)
++    print('ADE(synthP_, realP): ', ADE_params, '\n')
++
++    dist_params = wasserstein_distance(np.concatenate(gauss_params).flatten(), np.concatenate(test_params).flatten())
++    ADE_params = average_displacement_error(gauss_params, test_params)
++    frechet_dist = frdist(gauss_params, test_params)
++    print('\n\nW(gaussP, realP): ', dist_params)
++    print('F(gaussP, realP): ', frechet_dist)
++    print('ADE(gaussP_, realP): ', ADE_params, '\n\n')
++
++    count = 0
++    for i in range(0, 9, 2):
++        frechet_dist = []
++        frechet_dist_gauss = []
++
++        for j in range(len(synth_params)):
++            sy_params = synth_params[j][:, i:i+2]
++            ga_params = gauss_params[j][:, i:i+2]
++            te_params = test_params[j][:, i:i+2]
++            frechet_dist.append(frdist(sy_params, te_params))
++            frechet_dist_gauss.append(frdist(ga_params, te_params))
++
++        print('avg. F(synthP_' + str(4-count) + ', realP_' + str(4-count) + '): ' + str(np.mean(frechet_dist)))
++        print('avg. F(gaussP_' + str(4-count) + ', realP_' + str(4-count) + '): ' + str(np.mean(frechet_dist_gauss)))
++
++        count += 1
++
++    dist_disp = wasserstein_distance(np.concatenate(synth_displacement).flatten(), np.concatenate(test_displacement).flatten())
++    ADE_disp = average_displacement_error(synth_displacement, test_displacement)
++    print('W(synthD, realD): ',  dist_disp)
++    print('ADE(synthD, realD): ', ADE_disp, '\n')
++    dist_disp = wasserstein_distance(np.concatenate(gauss_displacement).flatten(), np.concatenate(test_displacement).flatten())
++    ADE_disp = average_displacement_error(gauss_displacement, test_displacement)
++    print('W(gaussD, realD): ',  dist_disp)
++    print('ADE(gaussD, realD): ', ADE_disp, '\n\n')
++
++    dist_alpha = wasserstein_distance(np.concatenate(synth_alpha).flatten(), np.concatenate(test_alpha).flatten())
++    print('W(synthAlpha, realAlpha): ',  dist_alpha, '\n')
++    dist_alpha = wasserstein_distance(np.concatenate(gauss_alpha).flatten(), np.concatenate(test_alpha).flatten())
++    print('W(gaussAlpha, realAlpha): ',  dist_alpha, '\n\n')
++
++    dist_compl = wasserstein_distance(np.concatenate(synth2measure).flatten(), np.concatenate(test2measure).flatten())
++    ADE_compl = average_displacement_error(synth2measure, test2measure)
++    print('W(synth, real): ', dist_compl)
++    print('ADE(synth, real): ', ADE_compl, '\n')
++    dist_compl = wasserstein_distance(np.concatenate(gauss2measure).flatten(), np.concatenate(test2measure).flatten())
++    ADE_compl = average_displacement_error(gauss2measure, test2measure)
++    print('W(gauss, real): ', dist_compl)
++    print('ADE(gauss, real): ', ADE_compl, '\n\n')
+ 
+-dist_params = wasserstein_distance(np.concatenate(gauss_params).flatten(), np.concatenate(test_params).flatten())
+-ADE_params = average_displacement_error(gauss_params, test_params)
+-frechet_dist = frdist(gauss_params, test_params)
+-print('\n\nW(gaussP, realP): ', dist_params)
+-print('F(gaussP, realP): ', frechet_dist)
+-print('ADE(gaussP_, realP): ', ADE_params, '\n\n')
+-
+-count = 0
+-for i in range(0, 9, 2):
+     frechet_dist = []
+     frechet_dist_gauss = []
+-
+-    for j in range(len(synth_params)):
+-        sy_params = synth_params[j][:, i:i+2]
+-        ga_params = gauss_params[j][:, i:i+2]
+-        te_params = test_params[j][:, i:i+2]
+-        frechet_dist.append(frdist(sy_params, te_params))
+-        frechet_dist_gauss.append(frdist(ga_params, te_params))
+-
+-    print('avg. F(synthP_' + str(4-count) + ', realP_' + str(4-count) + '): ' + str(np.mean(frechet_dist)))
+-    print('avg. F(gaussP_' + str(4-count) + ', realP_' + str(4-count) + '): ' + str(np.mean(frechet_dist_gauss)))
+-
+-    count += 1
+-
+-dist_disp = wasserstein_distance(np.concatenate(synth_displacement).flatten(), np.concatenate(test_displacement).flatten())
+-ADE_disp = average_displacement_error(synth_displacement, test_displacement)
+-print('W(synthD, realD): ',  dist_disp)
+-print('ADE(synthD, realD): ', ADE_disp, '\n')
+-dist_disp = wasserstein_distance(np.concatenate(gauss_displacement).flatten(), np.concatenate(test_displacement).flatten())
+-ADE_disp = average_displacement_error(gauss_displacement, test_displacement)
+-print('W(gaussD, realD): ',  dist_disp)
+-print('ADE(gaussD, realD): ', ADE_disp, '\n\n')
+-
+-dist_alpha = wasserstein_distance(np.concatenate(synth_alpha).flatten(), np.concatenate(test_alpha).flatten())
+-print('W(synthAlpha, realAlpha): ',  dist_alpha, '\n')
+-dist_alpha = wasserstein_distance(np.concatenate(gauss_alpha).flatten(), np.concatenate(test_alpha).flatten())
+-print('W(gaussAlpha, realAlpha): ',  dist_alpha, '\n\n')
+-
+-dist_compl = wasserstein_distance(np.concatenate(synth2measure).flatten(), np.concatenate(test2measure).flatten())
+-ADE_compl = average_displacement_error(synth2measure, test2measure)
+-print('W(synth, real): ', dist_compl)
+-print('ADE(synth, real): ', ADE_compl, '\n')
+-dist_compl = wasserstein_distance(np.concatenate(gauss2measure).flatten(), np.concatenate(test2measure).flatten())
+-ADE_compl = average_displacement_error(gauss2measure, test2measure)
+-print('W(gauss, real): ', dist_compl)
+-print('ADE(gauss, real): ', ADE_compl, '\n\n')
+-
+-frechet_dist = []
+-frechet_dist_gauss = []
+-for i in range(len(synth_head_coord)):
+-    sy_head = synth_head_coord[i]
+-    ga_head = gauss_head_coord[i]
+-    te_head = test_head_coord[i]
+-    frechet_dist.append(frdist(sy_head, te_head))
+-    frechet_dist_gauss.append(frdist(ga_head, te_head))
+-
+-dist_head = wasserstein_distance(np.concatenate(synth_head_coord).flatten(), np.concatenate(test_head_coord).flatten())
+-ADE_head = average_displacement_error(synth_head_coord, test_head_coord)
+-FDE_head = final_displacement_error(synth_head_coord, test_head_coord)
+-
+-print('W(synthHead, realHead): ' + str(dist_head))
+-print('avg. F(synthHead, realHead): ' + str(np.mean(frechet_dist)))
+-print('ADE(synthHead, realHead): ', ADE_head)
+-print('FDE(synthHead, realHead): ', FDE_head, '\n\n')
+-
+-dist_head = wasserstein_distance(np.concatenate(gauss_head_coord).flatten(), np.concatenate(test_head_coord).flatten())
+-ADE_head = average_displacement_error(gauss_head_coord, test_head_coord)
+-FDE_head = final_displacement_error(gauss_head_coord, test_head_coord)
+-
+-print('W(gaussHead, realHead): ' + str(dist_head))
+-print('avg. F(gaussHead, realHead): ' + str(np.mean(frechet_dist_gauss)))
+-print('ADE(gaussHead, realHead): ', ADE_head)
+-print('FDE(gaussHead, realHead): ', FDE_head, '\n\n')
+-
+-
+-
+-
+-
+-
++    for i in range(len(synth_head_coord)):
++        sy_head = synth_head_coord[i]
++        ga_head = gauss_head_coord[i]
++        te_head = test_head_coord[i]
++        frechet_dist.append(frdist(sy_head, te_head))
++        frechet_dist_gauss.append(frdist(ga_head, te_head))
++
++    dist_head = wasserstein_distance(np.concatenate(synth_head_coord).flatten(), np.concatenate(test_head_coord).flatten())
++    ADE_head = average_displacement_error(synth_head_coord, test_head_coord)
++    FDE_head = final_displacement_error(synth_head_coord, test_head_coord)
++
++    print('W(synthHead, realHead): ' + str(dist_head))
++    print('avg. F(synthHead, realHead): ' + str(np.mean(frechet_dist)))
++    print('ADE(synthHead, realHead): ', ADE_head)
++    print('FDE(synthHead, realHead): ', FDE_head, '\n\n')
++
++    dist_head = wasserstein_distance(np.concatenate(gauss_head_coord).flatten(), np.concatenate(test_head_coord).flatten())
++    ADE_head = average_displacement_error(gauss_head_coord, test_head_coord)
++    FDE_head = final_displacement_error(gauss_head_coord, test_head_coord)
++
++    print('W(gaussHead, realHead): ' + str(dist_head))
++    print('avg. F(gaussHead, realHead): ' + str(np.mean(frechet_dist_gauss)))
++    print('ADE(gaussHead, realHead): ', ADE_head)
++    print('FDE(gaussHead, realHead): ', FDE_head, '\n\n')
++
++synth_coord = []
++test_coord = []
++gauss_coord = []
++for i in range(len(synth_displacement)):
++    synth_coord.append(np.array([[0., 0.] for _ in range(synth_displacement[0].shape[0])]))
++    for j in range(1, synth_displacement[0].shape[0]):
++        synth_coord[i][j] = synth_coord[i][j-1] + synth_displacement[i][j]
++for i in range(len(test_displacement)):
++    test_coord.append(np.array([[0., 0.] for _ in range(test_displacement[0].shape[0])]))
++    for j in range(1, test_displacement[0].shape[0]):
++        test_coord[i][j] = test_coord[i][j-1] + test_displacement[i][j]
++for i in range(len(gauss_displacement)):
++    gauss_coord.append(np.array([[0., 0.] for _ in range(gauss_displacement[0].shape[0])]))
++    for j in range(1, gauss_displacement[0].shape[0]):
++        gauss_coord[i][j] = gauss_coord[i][j-1] + gauss_displacement[i][j]
++
++if len(synth_coord) == len(test_coord):
++    dist_params = wasserstein_distance(np.concatenate(synth_coord)[:, i:i + 2].flatten(),
++                                       np.concatenate(test_coord)[:, i:i + 2].flatten())
++    ADE_params = average_displacement_error(np.array(synth_coord)[:, :, i:i + 2],
++                                            np.array(test_coord)[:, :, i:i + 2])
++else:
++    n_samples = len(synth_coord) // len(test_params)
++    ADE_params = average_displacement_error_multiples_samples(np.array(synth_coord), np.array(test_coord), n_samples)
++    dist_params = wasserstain_distance_multi(np.array(synth_coord), np.array(test_coord), n_samples)
++    minADE_params = min_average_displacement_error(np.array(synth_coord), np.array(test_coord), n_samples)
++    print('minADE(synth_traj, real_traj): ', minADE_params)
++
++print('W(synth_traj, real_traj): ' + str(dist_params))
++print('ADE(synth_traj, real_traj): ', ADE_params)
++
++if len(synth_coord) == len(test_coord):
++    dist_params = wasserstein_distance(np.concatenate(gauss_coord)[:, i:i + 2].flatten(),
++                                       np.concatenate(test_coord)[:, i:i + 2].flatten())
++    ADE_params = average_displacement_error(np.array(gauss_coord)[:, :, i:i + 2],
++                                            np.array(test_coord)[:, :, i:i + 2])
++else:
++    n_samples = len(gauss_coord) // len(test_params)
++    ADE_params = average_displacement_error_multiples_samples(np.array(gauss_coord),
++                                                              np.array(test_coord), n_samples)
++    dist_params = wasserstain_distance_multi(np.array(gauss_coord), np.array(test_coord),
++                                             n_samples)
++    minADE_params = min_average_displacement_error(np.array(gauss_coord),
++                                                   np.array(test_coord), n_samples)
++    print('minADE(gauss_traj, real_traj): ', minADE_params)
++
++print('W(gauss_traj, real_traj): ' + str(dist_params))
++print('ADE(gauss_traj, real_traj): ', ADE_params)
++
++for k in range(len(test_coord)):
++    plt.figure()
++    fig, ax = plt.subplots(figsize = (12, 6))
++    color = list(colors.values())[k]
++
++    indx = len(synth_coord)//len(test_coord) * k
++    for i in range((len(synth_coord)//len(test_coord))):
++        if i == 0:
++            plt.plot(synth_coord[indx+i][:, 0], synth_coord[indx+i][:, 1], linewidth=3, c=color, label='Synthetic', alpha=0.5, antialiased=True)
++        else:
++            plt.plot(synth_coord[indx + i][:, 0], synth_coord[indx + i][:, 1], linewidth=3, c=color, alpha=0.5, antialiased=True)
++
++    color2 = list(colors.values())[(k+3)%len(colors.values())]
++    plt.plot(test_coord[k][:, 0], test_coord[k][:, 1], linewidth=3, c=color, linestyle='--', label='Real', antialiased=True)
++    # plt.legend(fontsize=40)
++    # plt.xlabel('x')
++    # plt.ylabel('y')
++
++    plt.xlim(-0.5, 5.)
++    plt.ylim(-4., 4.)
++    plt.xticks([0, 2, 4], fontsize=40)
++    plt.yticks([-4, -2, 0, 2, 4], fontsize=40)
++    fig.tight_layout()
++
++    if save_figures:
++        plt.savefig(os.path.join(synth_data_file, 'synth_traj_' + str(k) + '.png'))
++
++    # plt.figure()
++    # fig, ax = plt.subplots(figsize = (12, 8))
++    # plt.plot(test_coord[k][:, 0], test_coord[k][:, 1], linewidth=3, c=color)
++    # plt.legend()
++    # fig.tight_layout()
++    # plt.xlabel('Real trajectories')
++    # plt.xlim(-1., 5.)
++    # plt.ylim(-1., 5.)
++    #
++    # if save_figures:
++    #     plt.savefig(os.path.join(synth_data_file, 'real_traj_' + str(k) + '.png'))
++
++    plt.figure()
++    fig, ax = plt.subplots(figsize = (12, 6))
++
++    indx = len(gauss_coord)//len(test_coord) * k
++
++    for i in range(len(gauss_coord)//len(test_coord)):
++        if i == 0:
++            plt.plot(gauss_coord[i+indx][:, 0], gauss_coord[i+indx][:, 1], linewidth=3, c=color, label='Gaussian', alpha=0.5, antialiased=True)
++        else:
++            plt.plot(gauss_coord[i+indx][:, 0], gauss_coord[i+indx][:, 1], linewidth=3, c=color, alpha=0.5, antialiased=True)
++
++    plt.plot(test_coord[k][:, 0], test_coord[k][:, 1], linewidth=3, c=color, linestyle='--', label='Real', antialiased=True)
++
++    # plt.legend(fontsize=40)
++    # plt.xlabel('Gaussian trajectories')
++    plt.xlim(-1., 5.)
++    plt.ylim(-4., 4.)
++    plt.xticks([0, 2, 4], fontsize=40)
++    plt.yticks([-4, -2, 0, 2, 4], fontsize=40)
++    fig.tight_layout()
++
++    if save_figures:
++        plt.savefig(os.path.join(synth_data_file, 'gauss_traj_' + str(k) + '.png'))
++
++plt.figure()
++fig, ax = plt.subplots(figsize = (12, 6))
++
++
++for i in range(len(test_coord)):
++    color = list(colors.values())[i]
++    plt.plot(test_coord[i][:, 0], test_coord[i][:, 1], linewidth=3, c=color, label='Traj '+str(i), antialiased=True)
++# plt.legend(fontsize=40)
++plt.xlabel('Real trajectories')
++plt.xlim(-1., 5.)
++plt.ylim(-4., 4.)
++plt.xticks(fontsize=40)
++plt.yticks(fontsize=40)
++plt.grid(True)
++plt.xticks([0, 2, 4], fontsize=40)
++plt.yticks([-4, -2, 0, 2, 4], fontsize=40)
++
++fig.tight_layout()
++
++if save_figures:
++    plt.savefig(os.path.join(synth_data_file, 'all_real_traj' + '.png'))
+\ No newline at end of file
+diff --git a/scripts/paper_images/generate_sperms_jsons_rans_larger.py b/scripts/paper_images/generate_sperms_jsons_rans_larger.py
+index 87accfc..78890b3 100644
+--- a/scripts/paper_images/generate_sperms_jsons_rans_larger.py
++++ b/scripts/paper_images/generate_sperms_jsons_rans_larger.py
+@@ -52,7 +52,7 @@ seq_len = 1
+ # savebase = 'diffuser/datasets/synthdata_20240210'
+ # savebase = 'diffuser/datasets/synthdata_20240212'
+ # savebase = 'diffuser/datasets/synthdata_slow_sperm'
+-savebase = 'diffuser/datasets/synthdata_stopped_sperm'
++savebase = 'diffuser/datasets/synthdata_stopped_sperm_borrar'
+ 
+ make_subfolders = False
+ use_end_condition = False
+diff --git a/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py b/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py
+index 2300674..53e60b6 100644
+--- a/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py
++++ b/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py
+@@ -46,11 +46,11 @@ std_displacement = 6
+ disp_min = 16
+ disp_max = 60
+ seq_len = 2
+-
+-savebase = 'diffuser/datasets/synthdata_stopped_sperm_real_init_cond_train'
++n_copies = 10
++savebase = 'diffuser/datasets/synthdata_stopped_sperm_real_init_cond_test_multi'
+ data_file = 'diffuser/datasets/BezierSplinesData/stopped'
+ 
+-cond_train = True
++cond_train = False
+ make_subfolders = False
+ use_end_condition = False
+ 
+@@ -181,8 +181,16 @@ for i in range(len(inference_set['observations'])):
+     paths = []
+ 
+     batch = dataloader.__next__()
+-    traj = torch.from_numpy(np.expand_dims(inference_set['observations'][i], axis=0))
++
++    traj = np.zeros((n_copies, *inference_set['observations'][i].shape))
++
++    for j in range(n_copies):
++        traj[j] = inference_set['observations'][i]
++    # traj = np.expand_dims(inference_set['observations'][i])
++    # traj = torch.from_numpy(np.expand_dims(inference_set['observations'][i], axis=0))
++    traj = torch.from_numpy(traj)
+     norm_traj = dataset.normalizer.normalize(traj, 'observations')
++
+     conditions = {0 :  norm_traj[:, 0]}
+ 
+     for j in range(seq_len):

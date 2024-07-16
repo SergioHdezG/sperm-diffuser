@@ -1,0 +1,1913 @@
+diff --git a/scripts/baseline/generate_sperms_jsons_rans_larger_real_init_condition_lstm.py b/scripts/baseline/generate_sperms_jsons_rans_larger_real_init_condition_lstm.py
+index ba2d109..37b11e2 100644
+--- a/scripts/baseline/generate_sperms_jsons_rans_larger_real_init_condition_lstm.py
++++ b/scripts/baseline/generate_sperms_jsons_rans_larger_real_init_condition_lstm.py
+@@ -1,25 +1,22 @@
+ import json
+-import math
+-import pdb
+ import random
+ from json import JSONEncoder
++from typing import List, Any
++
++import joblib
+ 
+-import diffuser.datasets
+-import diffuser.sampling as sampling
+-import diffuser.utils as utils
+ from diffuser.environments.sperm import SingleSpermBezierIncrementsDataAugSimplified
+-from diffuser.utils.arrays import batch_to_device, to_np, to_device, apply_dict
+-import einops
+ import numpy as np
+ import torch
+-from diffuser.utils.training import cycle
+ import os
+-from diffuser.utils.video import save_video
+-from diffuser.models.helpers import apply_conditioning, apply_direction_coord_end_conditioning
+ from PIL import Image
+-from diffuser.environments.utils.sperm_rendering import vec2angle
++
+ from diffuser.environments.utils.Bezier import Bezier
+-import matplotlib as mpl
++from diffuser.environments.utils.sperm_rendering import vec2angle
++from scripts.baseline.timeSeriesLSTMsperm import LSTMModel
++
++from sklearn.preprocessing import MinMaxScaler
++import joblib
+ 
+ 
+ # -----------------------------------------------------------------------------#
+@@ -45,58 +42,36 @@ mean_displacement = 23
+ std_displacement = 6
+ disp_min = 16
+ disp_max = 60
+-seq_len = 2
++seq_len = 28
++hist_info = 4
+ n_copies = 10
+-savebase = 'diffuser/datasets/synthdata_moving_sperm_real_init_cond_test_multi_t_10'
+-data_file = 'diffuser/datasets/BezierSplinesData/moving'
++savebase = 'scripts/baseline/stopped/lstm4h_real_cond'
++data_file = 'diffuser/datasets/BezierSplinesData/stopped'
+ 
+-cond_train = False
+ make_subfolders = False
+-use_end_condition = False
+-
+-n_sperm_per_seq = [int(np.random.normal(mean_n_sperms, std_n_sperm)) for _ in range(n_sequences)]
+-
+-
+-class Parser(utils.Parser):
+-    dataset: str = 'SingleSpermBezierIncrementsDataAugSimplified-v0'
+-    config: str = 'config.sperm'
+-
+-
+-args = Parser().parse_args('plan')
++cond_train = False
++visualization_only = False
+ 
+ # -----------------------------------------------------------------------------#
+ # ---------------------------------- loading ----------------------------------#
+ # -----------------------------------------------------------------------------#
+ 
+-## load diffusion model and value function from disk
+-diffusion_experiment = utils.load_diffusion(
+-    args.loadbase, args.dataset, args.diffusion_loadpath,
+-    epoch=args.diffusion_epoch, seed=args.seed
+-)
+-
+-diffusion = diffusion_experiment.ema
+-diff_trainer = diffusion_experiment.trainer
+-dataset, _ = diffusion_experiment.dataset
+-renderer, _ = diffusion_experiment.renderer
++diffusion_loadpath = 'scripts/baseline/stopped/lstm4h/'
++env = SingleSpermBezierIncrementsDataAugSimplified(data_file=data_file)
+ 
+-logger_config = utils.Config(
+-    utils.Logger,
+-    renderer=renderer,
+-    logpath=args.savepath,
+-    vis_freq=args.vis_freq,
+-    max_render=args.max_render,
+-)
++# dataset_train = env.get_dataset()
++# dataset_test = env.get_dataset()
++# dataset_train = dataset_train['observations']
++# dataset_test = dataset_test['observations']
+ 
+-logger = logger_config()
++model = LSTMModel()
++model.load_state_dict(torch.load(os.path.join(diffusion_loadpath, "best.pt")))
++scaler = joblib.load(os.path.join(diffusion_loadpath, "scaler.save"))
+ 
+ # -----------------------------------------------------------------------------#
+ # --------------------------------- main loop ---------------------------------#
+ # -----------------------------------------------------------------------------#
+ 
+-dataloader = cycle(torch.utils.data.DataLoader(
+-    dataset, batch_size=int(np.max(n_sperm_per_seq)), num_workers=0, shuffle=True, pin_memory=True
+-))
+-
+ gauss_means = [-0.7101236, 0.012660508, -0.4724761, -0.011081022, -0.30175892, 0.013444074, -0.111315355, 0.03597443,
+                0.11064559, -0.012201412]
+ gauss_std = [0.18651162, 0.060374398, 0.16854781, 0.1470919, 0.12989329, 0.19624966, 0.15786962, 0.10110918,
+@@ -115,17 +90,17 @@ def sample_displacement(batch):
+                          np.random.normal(gauss_displ_mean[1], gauss_displ_std[1], batch)])
+ 
+ 
+-def sample_new_cond(shape, batch_size):
+-    sequences = np.zeros(shape)
+-    for k in range(len(gauss_means)):
+-        sequences[:, k] = sample_param(k, batch_size)
+-
+-    sequences[:, -4] = np.random.normal(gauss_displ_mean[0], gauss_displ_std[0], n_sperm_per_seq[i])
+-    sequences[:, -3] = np.random.normal(gauss_displ_mean[1], gauss_displ_std[1], n_sperm_per_seq[i])
+-    sequences[:, -2] = np.random.normal(gauss_displ_mean[2], gauss_displ_std[2], n_sperm_per_seq[i])
+-    sequences[:, -1] = np.random.normal(gauss_displ_mean[3], gauss_displ_std[3], n_sperm_per_seq[i])
+-
+-    return sequences
++# def sample_new_cond(shape, batch_size):
++#     sequences = np.zeros(shape)
++#     for k in range(len(gauss_means)):
++#         sequences[:, k] = sample_param(k, batch_size)
++#
++#     sequences[:, -4] = np.random.normal(gauss_displ_mean[0], gauss_displ_std[0], n_sperm_per_seq[i])
++#     sequences[:, -3] = np.random.normal(gauss_displ_mean[1], gauss_displ_std[1], n_sperm_per_seq[i])
++#     sequences[:, -2] = np.random.normal(gauss_displ_mean[2], gauss_displ_std[2], n_sperm_per_seq[i])
++#     sequences[:, -1] = np.random.normal(gauss_displ_mean[3], gauss_displ_std[3], n_sperm_per_seq[i])
++#
++#     return sequences
+ 
+ 
+ def save_numpy_array_as_gif(frames, gif_path, duration=100):
+@@ -167,7 +142,7 @@ def rotate2Dvec(v, theta):
+     v = np.dot(r, v)
+     return v
+ 
+-env = SingleSpermBezierIncrementsDataAugSimplified(data_file=data_file)
++device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+ 
+ trainset = env.get_dataset_trajectories()
+ testset = env.get_dataset_trajectories()
+@@ -180,49 +155,56 @@ for i in range(len(inference_set['observations'])):
+     observations = []
+     paths = []
+ 
+-    batch = dataloader.__next__()
+-
+     traj = np.zeros((n_copies, *inference_set['observations'][i].shape))
+ 
+     for j in range(n_copies):
+         traj[j] = inference_set['observations'][i]
+     # traj = np.expand_dims(inference_set['observations'][i])
+     # traj = torch.from_numpy(np.expand_dims(inference_set['observations'][i], axis=0))
+-    traj = torch.from_numpy(traj)
+-    norm_traj = dataset.normalizer.normalize(traj, 'observations')
+ 
+-    conditions = {0 :  norm_traj[:, 0]}
++    traj = traj[:, :4, :]
++    for k in range(traj.shape[1]):
++        traj[:, k] = scaler.transform(traj[:, k])
+ 
+-    for j in range(seq_len):
+-        if j == 0:
+-            conditions = to_device(conditions, 'cuda:0')
+-        else:
+-            conditions[0] = torch.from_numpy(normed_observations[:, -1])
+-            conditions = to_device(conditions, 'cuda:0')
++    if visualization_only:
++        # Initialize a list to store the forecasted values
++        trajectories = [traj[:, k] for k in range(hist_info)]
++    else:
++        trajectories = [traj[:, -1]]
+ 
+-        ## [ n_samples x horizon x (action_dim + observation_dim) ]
+-        samples = diffusion(conditions)
++    norm_traj = torch.from_numpy(traj)
+ 
+-        trajectories = to_np(samples.trajectories)
+ 
+-        ## [ n_samples x horizon x observation_dim ]
+-        normed_observations = trajectories[:, :, dataset.action_dim:]
+ 
+-        ## [ n_samples x (horizon + 1) x observation_dim ]
+-        unnormalized_obs = dataset.normalizer.unnormalize(normed_observations, 'observations')
++    # Use the last 30 data points as the starting point
++    historical_data = norm_traj
+ 
++    with torch.no_grad():
++        for _ in range(seq_len):
++            # Prepare the historical_data tensor
++            historical_data_tensor = torch.as_tensor(historical_data).view(n_copies, hist_info, 14).float().to(device)
++            # Use the model to predict the next value
++            predicted_value = model(historical_data_tensor).cpu().numpy()[:, 0]
+ 
+-        observations.append(unnormalized_obs)
+-        # observations.append(np.expand_dims(dataset.normalizer.unnormalize(normed_observations, 'observations')[:, -1, :], axis=1))
++            # Append the predicted value to the forecasted_values list
++            trajectories.append(scaler.inverse_transform(predicted_value))
+ 
++            # Update the historical_data sequence by removing the oldest value and adding the predicted value
++            historical_data = np.roll(historical_data, shift=-1, axis=1)
++            historical_data[:, -1] = predicted_value
++
++
++        trajectories = np.transpose(trajectories, (1, 0, 2))
++
++        observations.append(trajectories)
+ 
+     observations = np.concatenate(observations, axis=1)
+     for k in range(len(observations)):
+         if make_subfolders:
+-            path_seq = os.path.join(savebase, args.diffusion_loadpath.split('/')[-1], f'field_{i}',
++            path_seq = os.path.join(savebase, diffusion_loadpath.split('/')[-1], f'field_{i}',
+                                     'json_bezier_spline', f'field_{i}_{k}')
+         else:
+-            path_seq = os.path.join(savebase, args.diffusion_loadpath.split('/')[-1], f'field_{i}_{k}')
++            path_seq = os.path.join(savebase, diffusion_loadpath.split('/')[-1], f'field_{i}_{k}')
+ 
+         os.makedirs(path_seq, exist_ok=True)
+ 
+@@ -295,23 +277,7 @@ for i in range(len(inference_set['observations'])):
+         if state.shape[-1] == 14 or state.shape[-1] == 12:
+             paths.append(traj)
+ 
+-    observations = np.concatenate(observations, axis=1)
+-    if state.shape[-1] == 14 or state.shape[-1] == 12:
+-        paths = np.array(paths)
+-
+-    savepath = os.path.join(args.savepath, f'sample-{i}')
+-    if state.shape[-1] == 14 or state.shape[-1] == 12:
+-        images, images_debug = diff_trainer.renderer[0].composite_full_image(savepath, paths, dim=(1024, 1280),
+-                                                                             resize=(512, 640), ext='.png',
+-                                                                             use_ema=False)
+-    else:
+-        images, images_debug = diff_trainer.renderer[0].composite_full_image(savepath, observations, dim=(1024, 1280),
+-                                                                             resize=(512, 640), ext='.png')
+-
+-    save_video(os.path.join(args.savepath, f'sample-{i}.mp4'), images, fps=10)
+-    save_video(os.path.join(args.savepath, f'sample-{i}_debug.mp4'), images_debug, fps=10)
+ 
+-    save_numpy_array_as_gif(images_debug, os.path.join(args.savepath, f'sample-{i}_debug.gif'), duration=150)
+ 
+ 
+ 
+diff --git a/scripts/baseline/generate_sperms_jsons_rans_simplified_gauss_init_lstm.py b/scripts/baseline/generate_sperms_jsons_rans_simplified_gauss_init_lstm.py
+index b38c13f..55d8ff1 100644
+--- a/scripts/baseline/generate_sperms_jsons_rans_simplified_gauss_init_lstm.py
++++ b/scripts/baseline/generate_sperms_jsons_rans_simplified_gauss_init_lstm.py
+@@ -1,24 +1,22 @@
+ import json
+-import math
+-import pdb
+ import random
+ from json import JSONEncoder
+ 
+-import diffuser.datasets
+-import diffuser.sampling as sampling
+-import diffuser.utils as utils
+-from diffuser.utils.arrays import batch_to_device, to_np, to_device, apply_dict
+-import einops
++import joblib
++
++from diffuser.environments.sperm import SingleSpermBezierIncrementsDataAugSimplified
+ import numpy as np
+ import torch
+-from diffuser.utils.training import cycle
+ import os
+-from diffuser.utils.video import save_video
+-from diffuser.models.helpers import apply_conditioning, apply_direction_coord_end_conditioning
+ from PIL import Image
+-from diffuser.environments.utils.sperm_rendering import vec2angle
++
+ from diffuser.environments.utils.Bezier import Bezier
+-import matplotlib as mpl
++from diffuser.environments.utils.sperm_rendering import vec2angle
++from scripts.baseline.timeSeriesLSTMsperm import LSTMModel
++
++from sklearn.preprocessing import MinMaxScaler
++import joblib
++
+ 
+ #-----------------------------------------------------------------------------#
+ #----------------------------------- setup -----------------------------------#
+@@ -37,74 +35,43 @@ def save2json(dict, path):
+ 
+ mean_n_sperms = 174.6
+ std_n_sperm = 34.13
+-n_sequences = 3
++n_sequences = 6
+ mean_displacement = 23
+ std_displacement = 6
+ disp_min = 16
+ disp_max = 60
+-seq_len = 1
++seq_len = 16
++hist_info = 4
+ 
+-# savebase = 'diffuser/datasets/synthdata_20231109'
+-# savebase = 'diffuser/datasets/synthdata_20240111'
+-# savebase = 'diffuser/datasets/synthdata_20240207'
+-# savebase = 'diffuser/datasets/synthdata_20240210'
+-# savebase = 'diffuser/datasets/synthdata_20240212'
+-savebase = 'diffuser/datasets/synthdata_moving_sperm_t_10'
++savebase = 'scripts/baseline/stopped/lstm4h'
+ 
+ make_subfolders = False
+ use_end_condition = False
+ 
+ n_sperm_per_seq = [int(np.random.normal(mean_n_sperms, std_n_sperm)) for _ in range(n_sequences)]
+ 
+-class Parser(utils.Parser):
+-    dataset: str = 'SingleSpermBezierIncrementsDataAugSimplified-v0'
+-    config: str = 'config.sperm'
+-
+-args = Parser().parse_args('plan')
++# scaler = MinMaxScaler(feature_range=(0, 1))
+ 
+ #-----------------------------------------------------------------------------#
+ #---------------------------------- loading ----------------------------------#
+ #-----------------------------------------------------------------------------#
+ 
+-## load diffusion model and value function from disk
+-diffusion_experiment = utils.load_diffusion(
+-    args.loadbase, args.dataset, args.diffusion_loadpath,
+-    epoch=args.diffusion_epoch, seed=args.seed
+-)
+-
+-diffusion = diffusion_experiment.ema
+-diff_trainer = diffusion_experiment.trainer
+-dataset, _ = diffusion_experiment.dataset
+-renderer, _ = diffusion_experiment.renderer
+-
+-logger_config = utils.Config(
+-    utils.Logger,
+-    renderer=renderer,
+-    logpath=args.savepath,
+-    vis_freq=args.vis_freq,
+-    max_render=args.max_render,
+-)
+-
+-logger = logger_config()
+-
+-data_file = 'diffuser/datasets/BezierSplinesData/moving'
+-env = SingleSpermBezierIncrementsDataAugSimplified(data_file=data_file)
+-dataset_train = env.get_dataset()
+-dataset_test = env.get_dataset()
+-dataset_train = dataset_train['observations']
+-dataset_test = dataset_test['observations']
+-
+-model = TheModelClass(*args, **kwargs)
+-model.load_state_dict(torch.load(PATH))
+-model.eval()
++diffusion_loadpath = 'scripts/baseline/stopped/lstm4h/'
++env = SingleSpermBezierIncrementsDataAugSimplified()
++
++# dataset_train = env.get_dataset()
++# dataset_test = env.get_dataset()
++# dataset_train = dataset_train['observations']
++# dataset_test = dataset_test['observations']
++
++model = LSTMModel()
++model.load_state_dict(torch.load(os.path.join(diffusion_loadpath, "best.pt")))
++scaler = joblib.load(os.path.join(diffusion_loadpath, "scaler.save"))
+ 
+ #-----------------------------------------------------------------------------#
+ #--------------------------------- main loop ---------------------------------#
+ #-----------------------------------------------------------------------------#
+ 
+-dataloader = cycle(torch.utils.data.DataLoader(
+-            dataset, batch_size=int(np.max(n_sperm_per_seq)), num_workers=0, shuffle=True, pin_memory=True
+-        ))
+ 
+ gauss_means = [-0.7101236, 0.012660508, -0.4724761, -0.011081022, -0.30175892, 0.013444074, -0.111315355, 0.03597443,
+               0.11064559, -0.012201412]
+@@ -168,115 +135,59 @@ random.seed(1)
+ torch.manual_seed(1)
+ 
+ 
+-def create_conditions_sperm_aug_simplified_env(batch):
+-    mean_velocity = 3.27
+-    std_velocity = 0.71
+-    if use_end_condition:
+-        batch.conditions[args.horizon - 1] = batch.conditions[args.horizon - 1][:n_sperm_per_seq[i]]
+-    batch_size = batch.conditions[0].shape[0]
+-
+-    return batch
+-
+-def create_conditions_sperm_aug_env(batch):
+-    if use_end_condition:
+-        batch.conditions[args.horizon - 1] = batch.conditions[args.horizon - 1][:n_sperm_per_seq[i]]
+-    batch_size = batch.conditions[0].shape[0]
+-
+-    head_init_coords = np.zeros((batch_size, 2))
+-    head_init_coords[:, 0] = np.random.rand(batch_size) * 1280
+-    head_init_coords[:, 1] = np.random.rand(batch_size) * 1024
+-    # angle = np.expand_dims(np.clip(np.random.rand(0.01114, 0.58136, batch_size), -0.9999, 0.9999), axis=-1)
+-    angle_init = np.random.randint(0, 360, batch_size)
+-    if use_end_condition:
+-        unit_vector = angles_to_vectors(angle_init)
+-        displacement = np.clip(np.random.normal(mean_displacement, std_displacement, (batch_size, 1)), disp_min,
+-                               disp_max)
+-
+-        x_square = np.square(np.expand_dims(unit_vector[:, 0], axis=-1) * displacement)
+-        y_square = np.square(np.expand_dims(unit_vector[:, 1], axis=-1) * displacement)
+-
+-        displacement_x = np.sqrt(x_square)
+-        displacement_y = np.sqrt(y_square)
+-        displacement = np.concatenate([displacement_x, displacement_y], axis=-1)
+-
+-        head_end_coords = head_init_coords + displacement
+-        angle_end = angle_init + np.random.normal(0, 1)
+-    angle_init = (((angle_init / 180) + 1) % 2) - 1.
+-    if use_end_condition:
+-        angle_end = (((angle_end / 180) + 1) % 2) - 1.
+-    init_cond = np.random.rand(batch_size, batch.conditions[0].shape[1])
+-    init_cond[:, -3] = angle_init
+-    init_cond[:, -2] = (head_init_coords[:, 0] / 1280) * 2 - 1
+-    init_cond[:, -1] = (head_init_coords[:, 1] / 1024) * 2 - 1
+-    init_normalized = dataset.normalizer.normalize(init_cond, 'observations')
+-    batch.conditions[0][:, -3] = torch.from_numpy(init_normalized[:, -3])
+-    batch.conditions[0][:, -2:] = torch.from_numpy(init_normalized[:, -2:])
+-    if use_end_condition:
+-        end_cond = np.random.rand(batch_size, batch.conditions[0].shape[1])
+-        end_cond[:, -3] = angle_end
+-        end_cond[:, -2] = (head_end_coords[:, 0] / 1280) * 2 - 1
+-        end_cond[:, -1] = (head_end_coords[:, 1] / 1024) * 2 - 1
+-
+-        end_normalized = dataset.normalizer.normalize(end_cond, 'observations')
+-        batch.conditions[args.horizon - 1][:, -3] = torch.from_numpy(end_normalized[:, -3])
+-        batch.conditions[args.horizon - 1][:, -2:] = torch.from_numpy(end_normalized[:, -2:])
+-
+-    return batch
+-
+-
+ def rotate2Dvec(v, theta):
+     c, s = np.cos(theta), np.sin(theta)
+     r = np.array(((c, -s), (s, c)))
+     v = np.dot(r, v)
+     return v
+ 
++device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
++
+ for i in range(n_sequences):
+     observations = []
+     paths = []
+-    for j in range(seq_len):
+-        batch = dataloader.__next__()
+-        batch.conditions[0] = batch.conditions[0][:n_sperm_per_seq[i]]
++    gauss_cond = np.asarray([sample_new_cond((n_sperm_per_seq[i], 14), n_sperm_per_seq[i]) for _ in range(hist_info)])
++
+ 
+-        if batch.conditions[0].shape[-1] == 14:
+-            batch = create_conditions_sperm_aug_simplified_env(batch)
+-        else:
+-            batch = create_conditions_sperm_aug_env(batch)
+ 
+-        # conditions = to_device(batch.conditions, 'cuda:0')
+-        # # diffusion.apply_conditioning = apply_direction_coord_end_conditioning
+-        # unnormalized_conds = dataset.normalizer.unnormalize(batch.conditions[0], 'observations')
+-        # init_cond = np.random.rand(n_sperm_per_seq[i], batch.conditions[0].shape[1])
+-        # init_cond[:, -4] = np.random.normal(gauss_displ_mean[0], gauss_displ_std[0], n_sperm_per_seq[i])
+-        # init_cond[:, -3] = np.random.normal(gauss_displ_mean[1], gauss_displ_std[1], n_sperm_per_seq[i])
+-        # init_cond[:, -2] = np.random.normal(gauss_displ_mean[2], gauss_displ_std[2], n_sperm_per_seq[i])
+-        # init_cond[:, -1] = np.random.normal(gauss_displ_mean[3], gauss_displ_std[3], n_sperm_per_seq[i])
++    # Initialize a list to store the forecasted values
++    trajectories = [] # [gauss_cond[k] for k in range(hist_info)]
+ 
+-        gauss_cond = sample_new_cond((n_sperm_per_seq[i], batch.conditions[0].shape[1]), n_sperm_per_seq[i])
++    # Use the last 30 data points as the starting point
++    historical_data = np.array([scaler.transform(gauss_cond[k]) for k in range(hist_info)])
++    historical_data = np.transpose(historical_data, (1, 0, 2))
+ 
+-        batch.conditions[0] = dataset.normalizer.normalize(torch.from_numpy(gauss_cond), 'observations')
+-        conditions = to_device(batch.conditions, 'cuda:0')
++    with torch.no_grad():
++        for _ in range(seq_len * 2):
++            # Prepare the historical_data tensor
++            historical_data_tensor = torch.as_tensor(historical_data).view(n_sperm_per_seq[i], hist_info, 14).float().to(device)
++            # Use the model to predict the next value
++            predicted_value = model(historical_data_tensor).cpu().numpy()[:, 0]
+ 
+-        ## [ n_samples x horizon x (action_dim + observation_dim) ]
+-        samples = diffusion(conditions)
++            # Append the predicted value to the forecasted_values list
++            trajectories.append(scaler.inverse_transform(predicted_value))
+ 
+-        trajectories = to_np(samples.trajectories)
++            # Update the historical_data sequence by removing the oldest value and adding the predicted value
++            historical_data = np.roll(historical_data, shift=-1, axis=1)
++            historical_data[:, -1] = predicted_value
+ 
+-        ## [ n_samples x horizon x observation_dim ]
+-        normed_observations = trajectories[:, :, dataset.action_dim:]
++        #
++        # ## [ n_samples x horizon x observation_dim ]
++        # normed_observations = trajectories[:, :, dataset.action_dim:]
++        #
++        # ## [ n_samples x (horizon + 1) x observation_dim ]
+ 
+-        ## [ n_samples x (horizon + 1) x observation_dim ]
+-        unnormalized_obs = dataset.normalizer.unnormalize(normed_observations, 'observations')
+-        observations.append(unnormalized_obs)
+-        # observations.append(np.expand_dims(dataset.normalizer.unnormalize(normed_observations, 'observations')[:, -1, :], axis=1))
++        trajectories = np.transpose(trajectories, (1, 0, 2))
+ 
++        observations.append(trajectories)
+ 
+ 
+     observations = np.dstack(observations)
+     for k in range(len(observations)):
+         if make_subfolders:
+-            path_seq = os.path.join(savebase, args.diffusion_loadpath.split('/')[-1], f'field_{i}', 'json_bezier_spline', f'field_{i}_{k}')
++            path_seq = os.path.join(savebase, 'seq', diffusion_loadpath.split('/')[-1], f'field_{i}', 'json_bezier_spline', f'field_{i}_{k}')
+         else:
+-            path_seq = os.path.join(savebase, args.diffusion_loadpath.split('/')[-1], f'field_{i}_{k}')
++            path_seq = os.path.join(savebase,'seq', diffusion_loadpath.split('/')[-1], f'field_{i}_{k}')
+ 
+         os.makedirs(path_seq, exist_ok=True)
+ 
+@@ -292,123 +203,80 @@ for i in range(n_sequences):
+         for kk in range(state.shape[0]):
+ 
+             img_size = (1024, 1280)
+-            if state.shape[-1] == 14 or state.shape[-1] == 12:
+-                params = np.reshape(state[kk, :10], (5, 2))
+-                velocity = state[kk, -4:-2]
+-                correction_angle_vector = state[kk, -2:]
+-
+-                rot_velocity = rotate2Dvec(np.array(velocity), rand_rotation)
+-                rot_correction_angle_vector = rotate2Dvec(np.array(correction_angle_vector), rand_rotation)
+-
+-                velocity_angle = vec2angle(rot_velocity, normalize=False)
+-                correction_angle = vec2angle(rot_correction_angle_vector, normalize=False)
+-
+-
+-                aux_velocity_angle = vec2angle(np.array(velocity), normalize=False)
+-                aux_correction_angle = vec2angle(np.array(correction_angle_vector), normalize=False)
+-
+-                # a1 = np.radians(aux_velocity_angle - aux_correction_angle)
+-                # value1 = (a1 + np.pi) % (2 * np.pi) - np.pi
+-                # a2 = np.radians(velocity_angle - correction_angle)
+-                # value2 = (a2 + np.pi) % (2 * np.pi) - np.pi
+-                # if value1 > np.pi/2 or value2 > np.pi/2 or np.abs(value2-value1)> 0.1:
+-                #     print('alpha diff: ', value1, value2)
+-                #     rot_velocity = rotate2Dvec(np.array(velocity), rand_rotation)
+-                #     rot_correction_angle_vector = rotate2Dvec(np.array(correction_angle_vector), rand_rotation)
+-                #
+-                #     velocity_angle = vec2angle(rot_velocity, normalize=False)
+-                #     correction_angle = vec2angle(rot_correction_angle_vector, normalize=False)
+-                # rot = mpl.transforms.Affine2D().rotate_deg(correction_angle)
+-                # rot_params = rot.transform(params)
+-                
+-                linspace = np.linspace(0., 1., num=20)
+-                norm_curve = Bezier.Curve(linspace, params)
+-
+-
+-                params_p = (params + 1) * 70
+-                curve_p = (norm_curve + 1) * 70
+-                angle_p = correction_angle  # * 180.
+-                aux_x = ((aux_head[0] + 1.) / 2.) * img_size[1]
+-                aux_y = img_size[0]-((aux_head[1] + 1.) / 2.) * img_size[0]
+-
+-
+-                spline_params = {"frame": 'None',
+-                                 "spline_params": params_p,
+-                                 "spline_line_space": curve_p,
+-                                 "correction_angle": float(angle_p),
+-                                 "img_shape": (140, 140),
+-                                 'head_coordinates': [float(aux_x), float(aux_y), kk],
+-                                 'sperm_id': str(k)
+-                                 }
+-
+-                norm_x = (aux_x / img_size[1]) * 2 - 1
+-                norm_y = (aux_y / img_size[0]) * 2 - 1
+-                norm_vel_x = (aux_velocity[0] / 20)
+-                norm_vel_y = (aux_velocity[1] / 20)
+-
+-                if correction_angle > 180.:
+-                    angle = (correction_angle - 360)/180
+-                else:
+-                    angle = correction_angle/180
+-
+-                obs = np.concatenate([np.reshape(norm_curve, 40), state[kk, :10], [norm_vel_x, norm_vel_y, angle, norm_x, norm_y]])
+-
+-                aux_head[0] = aux_head[0] + ((rot_velocity[0] / img_size[1]) * 2)
+-                aux_head[1] = aux_head[1] + ((rot_velocity[1] / img_size[0]) * 2)
+-                aux_velocity[0] = rot_velocity[0]
+-                aux_velocity[1] = rot_velocity[1]
+-
+-                traj.append(obs)
++
++            params = np.reshape(state[kk, :10], (5, 2))
++            velocity = state[kk, -4:-2]
++            correction_angle_vector = state[kk, -2:]
++
++            rot_velocity = rotate2Dvec(np.array(velocity), rand_rotation)
++            rot_correction_angle_vector = rotate2Dvec(np.array(correction_angle_vector), rand_rotation)
++
++            velocity_angle = vec2angle(rot_velocity, normalize=False)
++            correction_angle = vec2angle(rot_correction_angle_vector, normalize=False)
++
++
++            aux_velocity_angle = vec2angle(np.array(velocity), normalize=False)
++            aux_correction_angle = vec2angle(np.array(correction_angle_vector), normalize=False)
++
++            # a1 = np.radians(aux_velocity_angle - aux_correction_angle)
++            # value1 = (a1 + np.pi) % (2 * np.pi) - np.pi
++            # a2 = np.radians(velocity_angle - correction_angle)
++            # value2 = (a2 + np.pi) % (2 * np.pi) - np.pi
++            # if value1 > np.pi/2 or value2 > np.pi/2 or np.abs(value2-value1)> 0.1:
++            #     print('alpha diff: ', value1, value2)
++            #     rot_velocity = rotate2Dvec(np.array(velocity), rand_rotation)
++            #     rot_correction_angle_vector = rotate2Dvec(np.array(correction_angle_vector), rand_rotation)
++            #
++            #     velocity_angle = vec2angle(rot_velocity, normalize=False)
++            #     correction_angle = vec2angle(rot_correction_angle_vector, normalize=False)
++            # rot = mpl.transforms.Affine2D().rotate_deg(correction_angle)
++            # rot_params = rot.transform(params)
++
++            linspace = np.linspace(0., 1., num=20)
++            norm_curve = Bezier.Curve(linspace, params)
++
++
++            params_p = (params + 1) * 70
++            curve_p = (norm_curve + 1) * 70
++            angle_p = correction_angle  # * 180.
++            aux_x = ((aux_head[0] + 1.) / 2.) * img_size[1]
++            aux_y = img_size[0]-((aux_head[1] + 1.) / 2.) * img_size[0]
++
++
++            spline_params = {"frame": 'None',
++                             "spline_params": params_p,
++                             "spline_line_space": curve_p,
++                             "correction_angle": float(angle_p),
++                             "img_shape": (140, 140),
++                             'head_coordinates': [float(aux_x), float(aux_y), kk],
++                             'sperm_id': str(k)
++                             }
++
++            norm_x = (aux_x / img_size[1]) * 2 - 1
++            norm_y = (aux_y / img_size[0]) * 2 - 1
++            norm_vel_x = (aux_velocity[0] / 20)
++            norm_vel_y = (aux_velocity[1] / 20)
++
++            if correction_angle > 180.:
++                angle = (correction_angle - 360)/180
+             else:
+-                params = np.reshape(state[kk, 40:50], (5, 2))
+-
+-                curve = np.reshape(state[kk, :40], (20, 2))
+-                angle = state[kk, -3]
+-                aux_head.append(state[kk, -2:])
+-                displacement = state[kk, -5:-3]
+-
+-                params = (params + 1) * 70
+-                curve = (curve + 1) * 70
+-                angle = angle * 180.
+-
+-                if first_iter:
+-                    first_iter = False
+-                else:
+-                    aux_head[kk][0] = aux_head[kk - 1][0] + ((displacement[0] * 20 / img_size[1]) * 2)
+-                    aux_head[kk][1] = aux_head[kk - 1][1] + ((displacement[1] * 20 / img_size[0]) * 2)
+-
+-                aux_x = ((aux_head[kk][0] + 1.) / 2.) * img_size[1]
+-                aux_y = img_size[0]-((aux_head[kk][1] + 1.) / 2.) * img_size[0]
+-
+-                spline_params = {"frame": 'None',
+-                                 "spline_params": params,
+-                                 "spline_line_space": curve,
+-                                 "correction_angle": float(angle),
+-                                 "img_shape": (140, 140),
+-                                 'head_coordinates': [float(aux_x), float(aux_y), kk],
+-                                 'sperm_id': str(k)
+-                                 }
++                angle = correction_angle/180
+ 
+-            save2json(spline_params, os.path.join(path_seq, str(kk).zfill(3) + '.json'))
++            obs = np.concatenate([np.reshape(norm_curve, 40), state[kk, :10], [norm_vel_x, norm_vel_y, angle, norm_x, norm_y]])
+ 
+-        if state.shape[-1] == 14 or state.shape[-1] == 12:
+-            paths.append(traj)
++            aux_head[0] = aux_head[0] + ((rot_velocity[0] / img_size[1]) * 2)
++            aux_head[1] = aux_head[1] + ((rot_velocity[1] / img_size[0]) * 2)
++            aux_velocity[0] = rot_velocity[0]
++            aux_velocity[1] = rot_velocity[1]
+ 
+-    observations = np.concatenate(observations, axis=1)
+-    if state.shape[-1] == 14 or state.shape[-1] == 12:
+-        paths = np.array(paths)
++            traj.append(obs)
+ 
+-    savepath = os.path.join(args.savepath, f'sample-{i}')
+-    if state.shape[-1] == 14 or state.shape[-1] == 12:
+-        images, images_debug = diff_trainer.renderer[0].composite_full_image(savepath, paths, dim=(1024, 1280), resize=(512, 640), ext='.png', use_ema=False)
+-    else:
+-        images, images_debug = diff_trainer.renderer[0].composite_full_image(savepath, observations, dim=(1024, 1280), resize=(512, 640), ext='.png')
++            save2json(spline_params, os.path.join(path_seq, str(kk).zfill(3) + '.json'))
+ 
++        if state.shape[-1] == 14 or state.shape[-1] == 12:
++            paths.append(traj)
+ 
+-    save_video(os.path.join(args.savepath, f'sample-{i}.mp4'), images, fps=10)
+-    save_video(os.path.join(args.savepath, f'sample-{i}_debug.mp4'), images_debug, fps=10)
+ 
+-    save_numpy_array_as_gif(images_debug, os.path.join(args.savepath, f'sample-{i}_debug.gif'), duration=150)
+ 
+ 
+ 
+diff --git a/scripts/baseline/timeSeriesLSTMsperm.py b/scripts/baseline/timeSeriesLSTMsperm.py
+index d8dfa74..e44a2f4 100644
+--- a/scripts/baseline/timeSeriesLSTMsperm.py
++++ b/scripts/baseline/timeSeriesLSTMsperm.py
+@@ -1,3 +1,5 @@
++import os
++
+ import pandas as pd
+ import numpy as np
+ import math
+@@ -13,240 +15,210 @@ from torch.utils.data import Dataset, DataLoader
+ 
+ import yfinance as yf
+ from datetime import date, timedelta, datetime
+-
+-end_date = date.today().strftime("%Y-%m-%d")  # end date for our data retrieval will be current date
+-start_date = '1990-01-01'  # Beginning date for our historical data retrieval
+-
+-df = yf.download('AAPL', start=start_date, end=end_date)  # Function used to fetch the data
+-
+-
+-def data_plot(df):
+-    df_plot = df.copy()
+-
+-    ncols = 2
+-    nrows = int(round(df_plot.shape[1] / ncols, 0))
+-
+-    fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
+-                           sharex=True, figsize=(14, 7))
+-    for i, ax in enumerate(fig.axes):
+-        sns.lineplot(data=df_plot.iloc[:, i], ax=ax)
+-        ax.tick_params(axis="x", rotation=30, labelsize=10, length=0)
+-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+-    fig.tight_layout()
+-    plt.show()
+-
+-
+-data_plot(df)
+-
+-# Train-Test Split
+-# Setting 80 percent data for training
+-training_data_len = math.ceil(len(df) * .8)
+-training_data_len
+-
+-# Splitting the dataset
+-train_data = df[:training_data_len].iloc[:, :1]
+-test_data = df[training_data_len:].iloc[:, :1]
+-print(train_data.shape, test_data.shape)
+-
+-# Selecting Open Price values
+-dataset_train = train_data.Open.values
+-# Reshaping 1D to 2D array
+-dataset_train = np.reshape(dataset_train, (-1,1))
+-dataset_train.shape
+-
+-# Selecting Open Price values
+-dataset_test = test_data.Open.values
+-# Reshaping 1D to 2D array
+-dataset_test = np.reshape(dataset_test, (-1,1))
+-dataset_test.shape
+-
+ from sklearn.preprocessing import MinMaxScaler
+-
+-scaler = MinMaxScaler(feature_range=(0, 1))
+-# scaling dataset
+-scaled_train = scaler.fit_transform(dataset_train)
+-
+-print(scaled_train[:5])
+-# Normalizing values between 0 and 1
+-scaled_test = scaler.fit_transform(dataset_test)
+-print(*scaled_test[:5])  # prints the first 5 rows of scaled_test
+-
+-# Create sequences and labels for training data
+-sequence_length = 50  # Number of time steps to look back
+-X_train, y_train = [], []
+-for i in range(len(scaled_train) - sequence_length):
+-    X_train.append(scaled_train[i:i + sequence_length])
+-    y_train.append(scaled_train[i + 1:i + sequence_length + 1])
+-X_train, y_train = np.array(X_train), np.array(y_train)
+-
+-# Convert data to PyTorch tensors
+-X_train = torch.tensor(X_train, dtype=torch.float32)
+-y_train = torch.tensor(y_train, dtype=torch.float32)
+-X_train.shape, y_train.shape
+-
+-# Create sequences and labels for testing data
+-sequence_length = 30  # Number of time steps to look back
+-X_test, y_test = [], []
+-for i in range(len(scaled_test) - sequence_length):
+-    X_test.append(scaled_test[i:i + sequence_length])
+-    y_test.append(scaled_test[i + 1:i + sequence_length + 1])
+-X_test, y_test = np.array(X_test), np.array(y_test)
+-
+-# Convert data to PyTorch tensors
+-X_test = torch.tensor(X_test, dtype=torch.float32)
+-y_test = torch.tensor(y_test, dtype=torch.float32)
+-X_test.shape, y_test.shape
+-
++from diffuser.environments.sperm import SingleSpermBezierIncrementsDataAugSimplified
++import joblib
+ 
+ class LSTMModel(nn.Module):
+     # input_size : number of features in input at each time step
+     # hidden_size : Number of LSTM units
+     # num_layers : number of LSTM layers
+-    def __init__(self, input_size, hidden_size, num_layers):
++    def __init__(self, input_size=14, hidden_size=32, num_layers=2, output_size=14, normalizer=None):
+         super(LSTMModel, self).__init__()  # initializes the parent class nn.Module
+         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+-        self.linear = nn.Linear(hidden_size, 1)
++        self.linear = nn.Linear(hidden_size, output_size)
++        self.normalizer = normalizer
+ 
+     def forward(self, x):  # defines forward pass of the neural network
+         out, _ = self.lstm(x)
+         out = self.linear(out)
+         return out
+ 
++if __name__ == '__main__':
++    save_path = 'scripts/baseline/stopped/lstm4h'
++
++    os.makedirs(save_path, exist_ok=True)
++    data_file = 'diffuser/datasets/BezierSplinesData/stopped'
++    env = SingleSpermBezierIncrementsDataAugSimplified(data_file=data_file)
++    dataset_train = env.get_dataset()
++    dataset_test = env.get_dataset()
++    dataset_train = dataset_train['observations']
++    dataset_test = dataset_test['observations']
++
++    scaler = MinMaxScaler(feature_range=(0, 1))
++    # scaling dataset
++    scaler.fit_transform(dataset_train)
++    scaled_train = scaler.transform(dataset_train)
++    print(scaled_train[:5])
++    # Normalizing values between 0 and 1
++    scaled_test = scaler.transform(dataset_test)
++    print(*scaled_test[:5])  # prints the first 5 rows of scaled_test
+ 
++    # Create sequences and labels for training data
++    sequence_length = 4  # Number of time steps to look back
++
++    X_train, y_train = [], []
++    for i in range(len(scaled_train) - sequence_length):
++        X_train.append(scaled_train[i:i + sequence_length])
++        y_train.append(scaled_train[i + 1:i + sequence_length + 1])
++    X_train, y_train = np.array(X_train), np.array(y_train)
+ 
+-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+-print(device)
++    # Convert data to PyTorch tensors
++    X_train = torch.tensor(X_train, dtype=torch.float32)
++    y_train = torch.tensor(y_train, dtype=torch.float32)
++    X_train.shape, y_train.shape
+ 
+-input_size = 1
+-num_layers = 2
+-hidden_size = 64
+-output_size = 1
++    # Create sequences and labels for testing data
++    sequence_length = 4  # Number of time steps to look back
+ 
+-# Define the model, loss function, and optimizer
+-model = LSTMModel(input_size, hidden_size, num_layers).to(device)
++    X_test, y_test = [], []
++    for i in range(len(scaled_test) - sequence_length):
++        X_test.append(scaled_test[i:i + sequence_length])
++        y_test.append(scaled_test[i + 1:i + sequence_length + 1])
++    X_test, y_test = np.array(X_test), np.array(y_test)
+ 
+-loss_fn = torch.nn.MSELoss(reduction='mean')
++    # Convert data to PyTorch tensors
++    X_test = torch.tensor(X_test, dtype=torch.float32)
++    y_test = torch.tensor(y_test, dtype=torch.float32)
++    X_test.shape, y_test.shape
+ 
+-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+-print(model)
+ 
+-batch_size = 16
+-# Create DataLoader for batch training
+-train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
+-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+ 
+-# Create DataLoader for batch training
+-test_dataset = torch.utils.data.TensorDataset(X_test, y_test)
+-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+ 
+-num_epochs = 5
+-train_hist =[]
+-test_hist =[]
+-# Training loop
+-for epoch in range(num_epochs):
+-	total_loss = 0.0
++    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
++    print(device)
+ 
+-	# Training
+-	model.train()
+-	for batch_X, batch_y in train_loader:
+-		batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+-		predictions = model(batch_X)
+-		loss = loss_fn(predictions, batch_y)
++    input_size = 14
++    num_layers = 2
++    hidden_size = 32
++    output_size = 14
+ 
+-		optimizer.zero_grad()
+-		loss.backward()
+-		optimizer.step()
++    # Define the model, loss function, and optimizer
++    model = LSTMModel(input_size, hidden_size, num_layers, output_size, scaler).to(device)
+ 
+-		total_loss += loss.item()
++    loss_fn = torch.nn.MSELoss(reduction='mean')
+ 
+-	# Calculate average training loss and accuracy
+-	average_loss = total_loss / len(train_loader)
+-	train_hist.append(average_loss)
++    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
++    print(model)
+ 
+-	# Validation on test data
+-	model.eval()
+-	with torch.no_grad():
+-		total_test_loss = 0.0
++    batch_size = 16
++    # Create DataLoader for batch training
++    train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
++    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+ 
+-		for batch_X_test, batch_y_test in test_loader:
+-			batch_X_test, batch_y_test = batch_X_test.to(device), batch_y_test.to(device)
+-			predictions_test = model(batch_X_test)
+-			test_loss = loss_fn(predictions_test, batch_y_test)
++    # Create DataLoader for batch training
++    test_dataset = torch.utils.data.TensorDataset(X_test, y_test)
++    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+ 
+-			total_test_loss += test_loss.item()
++    num_epochs = 200
+ 
+-		# Calculate average test loss and accuracy
+-		average_test_loss = total_test_loss / len(test_loader)
+-		test_hist.append(average_test_loss)
+-	if (epoch+1)%10==0:
+-		print(f'Epoch [{epoch+1}/{num_epochs}] - Training Loss: {average_loss:.4f}, Test Loss: {average_test_loss:.4f}')
++    train_hist =[]
++    test_hist =[]
++    # Training loop
+ 
+-x = np.linspace(1,num_epochs,num_epochs)
+-plt.plot(x,train_hist,scalex=True, label="Training loss")
+-plt.plot(x, test_hist, label="Test loss")
+-plt.legend()
+-plt.show()
++    last_val_loss = 1e10
++    for epoch in range(num_epochs):
++        total_loss = 0.0
++        # Training
++        model.train()
++        for batch_X, batch_y in train_loader:
++            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
++            predictions = model(batch_X)
++            loss = loss_fn(predictions, batch_y)
+ 
+-# Define the number of future time steps to forecast
+-num_forecast_steps = 30
++            optimizer.zero_grad()
++            loss.backward()
++            optimizer.step()
+ 
+-# Convert to NumPy and remove singleton dimensions
+-sequence_to_plot = X_test.squeeze().cpu().numpy()
++            total_loss += loss.item()
+ 
+-# Use the last 30 data points as the starting point
+-historical_data = sequence_to_plot[-1]
+-print(historical_data.shape)
++        # Calculate average training loss and accuracy
++        average_loss = total_loss / len(train_loader)
++        train_hist.append(average_loss)
++
++        # Validation on test data
++        model.eval()
++        with torch.no_grad():
++            total_test_loss = 0.0
+ 
+-# Initialize a list to store the forecasted values
+-forecasted_values = []
++            for batch_X_test, batch_y_test in test_loader:
++                batch_X_test, batch_y_test = batch_X_test.to(device), batch_y_test.to(device)
++                predictions_test = model(batch_X_test)
++                test_loss = loss_fn(predictions_test, batch_y_test)
+ 
+-# Use the trained model to forecast future values
+-with torch.no_grad():
+-    for _ in range(num_forecast_steps * 2):
+-        # Prepare the historical_data tensor
+-        historical_data_tensor = torch.as_tensor(historical_data).view(1, -1, 1).float().to(device)
+-        # Use the model to predict the next value
+-        predicted_value = model(historical_data_tensor).cpu().numpy()[0, 0]
++                total_test_loss += test_loss.item()
+ 
+-        # Append the predicted value to the forecasted_values list
+-        forecasted_values.append(predicted_value[0])
++            # Calculate average test loss and accuracy
++            average_test_loss = total_test_loss / len(test_loader)
+ 
+-        # Update the historical_data sequence by removing the oldest value and adding the predicted value
+-        historical_data = np.roll(historical_data, shift=-1)
+-        historical_data[-1] = predicted_value
++            if average_test_loss < last_val_loss:
++                torch.save(model.state_dict(), os.path.join(save_path, 'best.pt'))
++            last_val_loss = average_test_loss
++            test_hist.append(average_test_loss)
++        if (epoch+1)%10==0:
++            print(f'Epoch [{epoch+1}/{num_epochs}] - Training Loss: {average_loss:.4f}, Test Loss: {average_test_loss:.4f}')
+ 
+-# Generate futute dates
+-last_date = test_data.index[-1]
+-
+-# Generate the next 30 dates
+-future_dates = pd.date_range(start=last_date + pd.DateOffset(1), periods=30)
+ 
+-# Concatenate the original index with the future dates
+-combined_index = test_data.index.append(future_dates)
++    torch.save(model.state_dict(), os.path.join(save_path, 'last.pt'))
++    scaler_filename = os.path.join(save_path, "scaler.save")
++    joblib.dump(scaler, scaler_filename)
++
++    x = np.linspace(1,num_epochs,num_epochs)
++    plt.plot(x,train_hist,scalex=True, label="Training loss")
++    plt.plot(x, test_hist, label="Test loss")
++    plt.legend()
++    plt.show()
+ 
+-#set the size of the plot
+-plt.rcParams['figure.figsize'] = [14, 4]
+ 
+ 
+-#Test data
+-plt.plot(test_data.index[-100:-30], test_data.Open[-100:-30], label = "test_data", color = "b")
+-#reverse the scaling transformation
+-original_cases = scaler.inverse_transform(np.expand_dims(sequence_to_plot[-1], axis=0)).flatten()
+-
+-#the historical data used as input for forecasting
+-plt.plot(test_data.index[-30:], original_cases, label='actual values', color='green')
+-
+-#Forecasted Values
+-#reverse the scaling transformation
+-forecasted_cases = scaler.inverse_transform(np.expand_dims(forecasted_values, axis=0)).flatten()
+-# plotting the forecasted values
+-plt.plot(combined_index[-60:], forecasted_cases, label='forecasted values', color='red')
+-
+-plt.xlabel('Time Step')
+-plt.ylabel('Value')
+-plt.legend()
+-plt.title('Time Series Forecasting')
+-plt.grid(True)
+-
+-plt.show()
++    # # Define the number of future time steps to forecast
++    # num_forecast_steps = 24
++    #
++    # # Convert to NumPy and remove singleton dimensions
++    # sequence_to_plot = X_test.squeeze().cpu().numpy()
++    #
++    # # Use the last 30 data points as the starting point
++    # historical_data = sequence_to_plot[-1]
++    # print(historical_data.shape)
++    #
++    # # Initialize a list to store the forecasted values
++    # forecasted_values = []
++    #
++    # # Use the trained model to forecast future values
++    # with torch.no_grad():
++    #     for _ in range(num_forecast_steps * 2):
++    #         # Prepare the historical_data tensor
++    #         historical_data_tensor = torch.as_tensor(historical_data).view(1, -1, 1).float().to(device)
++    #         # Use the model to predict the next value
++    #         predicted_value = model(historical_data_tensor).cpu().numpy()[0, 0]
++    #
++    #         # Append the predicted value to the forecasted_values list
++    #         forecasted_values.append(predicted_value[0])
++    #
++    #         # Update the historical_data sequence by removing the oldest value and adding the predicted value
++    #         historical_data = np.roll(historical_data, shift=-1)
++    #         historical_data[-1] = predicted_value
++    #
++    # # Generate futute dates
++    # #Test data
++    # plt.plot(test_data.index[-100:-30], test_data.Open[-100:-30], label = "test_data", color = "b")
++    # #reverse the scaling transformation
++    # original_cases = scaler.inverse_transform(np.expand_dims(sequence_to_plot[-1], axis=0)).flatten()
++    #
++    # #the historical data used as input for forecasting
++    # plt.plot(test_data.index[-30:], original_cases, label='actual values', color='green')
++    #
++    # #Forecasted Values
++    # #reverse the scaling transformation
++    # forecasted_cases = scaler.inverse_transform(np.expand_dims(forecasted_values, axis=0)).flatten()
++    # # plotting the forecasted values
++    # plt.plot(combined_index[-60:], forecasted_cases, label='forecasted values', color='red')
++    #
++    # plt.xlabel('Time Step')
++    # plt.ylabel('Value')
++    # plt.legend()
++    # plt.title('Time Series Forecasting')
++    # plt.grid(True)
++    #
++    # plt.show()
+ 
+diff --git a/scripts/baseline/timeSeriesLSTMtutorial.py b/scripts/baseline/timeSeriesLSTMtutorial.py
+index e69de29..71198d9 100644
+--- a/scripts/baseline/timeSeriesLSTMtutorial.py
++++ b/scripts/baseline/timeSeriesLSTMtutorial.py
+@@ -0,0 +1,252 @@
++import pandas as pd
++import numpy as np
++import math
++import matplotlib.pyplot as plt # Visualization
++import matplotlib.dates as mdates # Formatting dates
++import seaborn as sns # Visualization
++from sklearn.preprocessing import MinMaxScaler
++import torch # Library for implementing Deep Neural Network
++import torch.nn as nn
++import torch.nn.functional as F
++import torch.optim as optim
++from torch.utils.data import Dataset, DataLoader
++
++import yfinance as yf
++from datetime import date, timedelta, datetime
++
++end_date = date.today().strftime("%Y-%m-%d")  # end date for our data retrieval will be current date
++start_date = '1990-01-01'  # Beginning date for our historical data retrieval
++
++df = yf.download('AAPL', start=start_date, end=end_date)  # Function used to fetch the data
++
++
++def data_plot(df):
++    df_plot = df.copy()
++
++    ncols = 2
++    nrows = int(round(df_plot.shape[1] / ncols, 0))
++
++    fig, ax = plt.subplots(nrows=nrows, ncols=ncols,
++                           sharex=True, figsize=(14, 7))
++    for i, ax in enumerate(fig.axes):
++        sns.lineplot(data=df_plot.iloc[:, i], ax=ax)
++        ax.tick_params(axis="x", rotation=30, labelsize=10, length=0)
++        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
++    fig.tight_layout()
++    plt.show()
++
++
++data_plot(df)
++
++# Train-Test Split
++# Setting 80 percent data for training
++training_data_len = math.ceil(len(df) * .8)
++training_data_len
++
++# Splitting the dataset
++train_data = df[:training_data_len].iloc[:, :1]
++test_data = df[training_data_len:].iloc[:, :1]
++print(train_data.shape, test_data.shape)
++
++# Selecting Open Price values
++dataset_train = train_data.Open.values
++# Reshaping 1D to 2D array
++dataset_train = np.reshape(dataset_train, (-1,1))
++dataset_train.shape
++
++# Selecting Open Price values
++dataset_test = test_data.Open.values
++# Reshaping 1D to 2D array
++dataset_test = np.reshape(dataset_test, (-1,1))
++dataset_test.shape
++
++from sklearn.preprocessing import MinMaxScaler
++
++scaler = MinMaxScaler(feature_range=(0, 1))
++# scaling dataset
++scaled_train = scaler.fit_transform(dataset_train)
++
++print(scaled_train[:5])
++# Normalizing values between 0 and 1
++scaled_test = scaler.fit_transform(dataset_test)
++
++print(*scaled_test[:5])  # prints the first 5 rows of scaled_test
++# Create sequences and labels for training data
++sequence_length = 50  # Number of time steps to look back
++X_train, y_train = [], []
++for i in range(len(scaled_train) - sequence_length):
++    X_train.append(scaled_train[i:i + sequence_length])
++    y_train.append(scaled_train[i + 1:i + sequence_length + 1])
++X_train, y_train = np.array(X_train), np.array(y_train)
++
++# Convert data to PyTorch tensors
++X_train = torch.tensor(X_train, dtype=torch.float32)
++y_train = torch.tensor(y_train, dtype=torch.float32)
++X_train.shape, y_train.shape
++
++# Create sequences and labels for testing data
++sequence_length = 30  # Number of time steps to look back
++X_test, y_test = [], []
++for i in range(len(scaled_test) - sequence_length):
++    X_test.append(scaled_test[i:i + sequence_length])
++    y_test.append(scaled_test[i + 1:i + sequence_length + 1])
++X_test, y_test = np.array(X_test), np.array(y_test)
++
++# Convert data to PyTorch tensors
++X_test = torch.tensor(X_test, dtype=torch.float32)
++y_test = torch.tensor(y_test, dtype=torch.float32)
++X_test.shape, y_test.shape
++
++
++class LSTMModel(nn.Module):
++    # input_size : number of features in input at each time step
++    # hidden_size : Number of LSTM units
++    # num_layers : number of LSTM layers
++    def __init__(self, input_size, hidden_size, num_layers):
++        super(LSTMModel, self).__init__()  # initializes the parent class nn.Module
++        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
++        self.linear = nn.Linear(hidden_size, 1)
++
++    def forward(self, x):  # defines forward pass of the neural network
++        out, _ = self.lstm(x)
++        out = self.linear(out)
++        return out
++
++
++
++device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
++print(device)
++
++input_size = 1
++num_layers = 2
++hidden_size = 64
++output_size = 1
++
++# Define the model, loss function, and optimizer
++model = LSTMModel(input_size, hidden_size, num_layers).to(device)
++
++loss_fn = torch.nn.MSELoss(reduction='mean')
++
++optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
++print(model)
++
++batch_size = 16
++# Create DataLoader for batch training
++train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
++train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
++
++# Create DataLoader for batch training
++test_dataset = torch.utils.data.TensorDataset(X_test, y_test)
++test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
++
++num_epochs = 5
++train_hist =[]
++test_hist =[]
++# Training loop
++for epoch in range(num_epochs):
++	total_loss = 0.0
++
++	# Training
++	model.train()
++	for batch_X, batch_y in train_loader:
++		batch_X, batch_y = batch_X.to(device), batch_y.to(device)
++		predictions = model(batch_X)
++		loss = loss_fn(predictions, batch_y)
++
++		optimizer.zero_grad()
++		loss.backward()
++		optimizer.step()
++
++		total_loss += loss.item()
++
++	# Calculate average training loss and accuracy
++	average_loss = total_loss / len(train_loader)
++	train_hist.append(average_loss)
++
++	# Validation on test data
++	model.eval()
++	with torch.no_grad():
++		total_test_loss = 0.0
++
++		for batch_X_test, batch_y_test in test_loader:
++			batch_X_test, batch_y_test = batch_X_test.to(device), batch_y_test.to(device)
++			predictions_test = model(batch_X_test)
++			test_loss = loss_fn(predictions_test, batch_y_test)
++
++			total_test_loss += test_loss.item()
++
++		# Calculate average test loss and accuracy
++		average_test_loss = total_test_loss / len(test_loader)
++		test_hist.append(average_test_loss)
++	if (epoch+1)%10==0:
++		print(f'Epoch [{epoch+1}/{num_epochs}] - Training Loss: {average_loss:.4f}, Test Loss: {average_test_loss:.4f}')
++
++x = np.linspace(1,num_epochs,num_epochs)
++plt.plot(x,train_hist,scalex=True, label="Training loss")
++plt.plot(x, test_hist, label="Test loss")
++plt.legend()
++plt.show()
++
++# Define the number of future time steps to forecast
++num_forecast_steps = 30
++
++# Convert to NumPy and remove singleton dimensions
++sequence_to_plot = X_test.squeeze().cpu().numpy()
++
++# Use the last 30 data points as the starting point
++historical_data = sequence_to_plot[-1]
++print(historical_data.shape)
++
++# Initialize a list to store the forecasted values
++forecasted_values = []
++
++# Use the trained model to forecast future values
++with torch.no_grad():
++    for _ in range(num_forecast_steps * 2):
++        # Prepare the historical_data tensor
++        historical_data_tensor = torch.as_tensor(historical_data).view(1, -1, 1).float().to(device)
++        # Use the model to predict the next value
++        predicted_value = model(historical_data_tensor).cpu().numpy()[0, 0]
++
++        # Append the predicted value to the forecasted_values list
++        forecasted_values.append(predicted_value[0])
++
++        # Update the historical_data sequence by removing the oldest value and adding the predicted value
++        historical_data = np.roll(historical_data, shift=-1)
++        historical_data[-1] = predicted_value
++
++# Generate futute dates
++last_date = test_data.index[-1]
++
++# Generate the next 30 dates
++future_dates = pd.date_range(start=last_date + pd.DateOffset(1), periods=30)
++
++# Concatenate the original index with the future dates
++combined_index = test_data.index.append(future_dates)
++
++#set the size of the plot
++plt.rcParams['figure.figsize'] = [14, 4]
++
++
++#Test data
++plt.plot(test_data.index[-100:-30], test_data.Open[-100:-30], label = "test_data", color = "b")
++#reverse the scaling transformation
++original_cases = scaler.inverse_transform(np.expand_dims(sequence_to_plot[-1], axis=0)).flatten()
++
++#the historical data used as input for forecasting
++plt.plot(test_data.index[-30:], original_cases, label='actual values', color='green')
++
++#Forecasted Values
++#reverse the scaling transformation
++forecasted_cases = scaler.inverse_transform(np.expand_dims(forecasted_values, axis=0)).flatten()
++# plotting the forecasted values
++plt.plot(combined_index[-60:], forecasted_cases, label='forecasted values', color='red')
++
++plt.xlabel('Time Step')
++plt.ylabel('Value')
++plt.legend()
++plt.title('Time Series Forecasting')
++plt.grid(True)
++
++plt.show()
++
+diff --git a/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py b/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
+index 656cfbb..a632ee3 100644
+--- a/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
++++ b/scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
+@@ -51,10 +51,10 @@ args = Parser().parse_args('diffusion')
+ 
+ cycle_color = False
+ save_figures = True
+-stopped_samples = True
++stopped_samples = False
+ data_file = 'diffuser/datasets/BezierSplinesData/stopped'
+ 
+-synth_data_file = 'diffuser/datasets/synthdata_stopped_sperm_real_init_cond_test_multi2/'
++synth_data_file = 'scripts/baseline/stopped/lstm4h_real_cond' # 'diffuser/datasets/synthdata_moving_sperm_real_init_cond_test_multi_t_10/'
+ 
+ gauss_data_file = 'diffuser/datasets/synthdata_GaussModel_20240229'
+ 
+@@ -484,7 +484,7 @@ for k in range(len(test_coord)):
+     if cycle_color:
+         color = list(colors.values())[(k+3)%len(colors.values())]
+     else:
+-        color = colors['green']
++        color = colors['brown']
+     plt.plot(test_coord[k][:, 0], test_coord[k][:, 1], linewidth=3, c=color, linestyle='--', label='Real', antialiased=True)
+     # plt.legend(fontsize=40)
+     # plt.xlabel('x')
+diff --git a/scripts/measurements/measure_generated_dataset_simplified_model.py b/scripts/measurements/measure_generated_dataset_simplified_model.py
+index 815f016..bc7bdce 100644
+--- a/scripts/measurements/measure_generated_dataset_simplified_model.py
++++ b/scripts/measurements/measure_generated_dataset_simplified_model.py
+@@ -44,13 +44,18 @@ args = Parser().parse_args('diffusion')
+ save_figures = True
+ data_file = 'diffuser/datasets/BezierSplinesData/stopped'
+ 
+-figures_path = 'diffuser/datasets/synthdata_stopped_sperm'
+-synth_data_file = 'diffuser/datasets/synthdata_stopped_sperm/2024-02-27:16-30'
++figures_path = 'scripts/baseline/stopped/lstm4h_real_cond'  # 'diffuser/datasets/synthdata_stopped_sperm2/'
++synth_data_file = 'scripts/baseline/stopped/lstm4h_real_cond'  # 'diffuser/datasets/synthdata_stopped_sperm2/2024-03-05:16-29'
+ 
+ #-----------------------------------------------------------------------------#
+ #------------------------------loading real data------------------------------#
+ #-----------------------------------------------------------------------------#
+ 
++
++th = -0.01 # Filtering lower values on the displacement modulus resulting of first state of a trajectory.
++# These are 0. because there is no way to  measure displascement on the first frame. Use th = 0.08 for progressive and slow
++# progressive sperm cells and th = -0.01 for inmotile sperm.
++
+ # Calculate KL divergence
+ def kl_mvn(mean_p, cov_p, mean_q, cov_q):
+     kl_divergence = 0.5 * (
+@@ -260,7 +265,6 @@ synth_trainset_displacement = synth_trainset[:, -5:-3].transpose(1, 0)
+ full_data_displacement = full_data[:, -5:-3].transpose(1, 0)
+ synthset_displacement = synthset[:, -5:-3].transpose(1, 0)
+ 
+-th = 0.08 # Filtering lower values resulting of first state of a trajectory. These are 0. becouse there is no way to measure displascement on the first frame.
+ modu_testset_displacement = calc_module(testset_displacement)
+ ind = [modu_testset_displacement > th][0]
+ modu_testset_displacement = modu_testset_displacement[ind]
+diff --git a/scripts/paper_images/generate_sperms_jsons_dataset_gauss_init.py b/scripts/paper_images/generate_sperms_jsons_dataset_gauss_init.py
+index 308c1df..1d2a8ef 100644
+--- a/scripts/paper_images/generate_sperms_jsons_dataset_gauss_init.py
++++ b/scripts/paper_images/generate_sperms_jsons_dataset_gauss_init.py
+@@ -192,16 +192,23 @@ for i in range(n_sequences):
+     observations_inmotile = []
+ 
+     paths = []
++
++    batch = dataloader.__next__()
++    batch.conditions[0] = batch.conditions[0][:n_sperm_per_seq[i]]
++
+     for j in range(seq_len):
+-        batch = dataloader.__next__()
+-        batch.conditions[0] = batch.conditions[0][:n_sperm_per_seq[i]]
+ 
+-        gauss_cond = sample_new_cond((n_sperm_per_seq[i], dataset.observation_dim), n_sperm_per_seq[i])
++        if j == 0:
++            gauss_cond = sample_new_cond((n_sperm_per_seq[i], dataset.observation_dim), n_sperm_per_seq[i])
+ 
+-        ## batch.conditions[0] = dataset.normalizer.normalize(torch.from_numpy(gauss_cond), 'observations')
+-        conditions = dataset.normalizer.normalize(torch.from_numpy(gauss_cond), 'observations')
+-        conditions = {0: torch.from_numpy(gauss_cond)}
+-        conditions = to_device(conditions, 'cuda:0')
++            ## batch.conditions[0] = dataset.normalizer.normalize(torch.from_numpy(gauss_cond), 'observations')
++            conditions = dataset.normalizer.normalize(torch.from_numpy(gauss_cond), 'observations')
++            conditions = {0: torch.from_numpy(gauss_cond)}
++            conditions = to_device(conditions, 'cuda:0')
++        else:
++            normed_observations = np.concatenate([normed_obs_moving, normed_obs_slow, normed_obs_inmotile], axis=0)
++            conditions[0] = torch.from_numpy(normed_observations[:, -1])
++            conditions = to_device(conditions, 'cuda:0')
+ 
+         ## [ n_samples x horizon x (action_dim + observation_dim) ]
+         samples_moving = diffusion_moving(conditions)
+@@ -215,25 +222,26 @@ for i in range(n_sequences):
+ 
+         ## [ n_samples x horizon x observation_dim ]
+         normed_obs_moving = trajectories_moving[:, :, dataset.action_dim:]
+-        trajectories_slow = trajectories_slow[:, :, dataset.action_dim:]
+-        trajectories_inmotile = trajectories_inmotile[:, :, dataset.action_dim:]
++        normed_obs_slow = trajectories_slow[:, :, dataset.action_dim:]
++        normed_obs_inmotile = trajectories_inmotile[:, :, dataset.action_dim:]
+ 
+         ## [ n_samples x (horizon + 1) x observation_dim ]
+         unnormalized_obs_moving = dataset.normalizer.unnormalize(normed_obs_moving, 'observations')
+-        unnormalized_obs_slow = dataset.normalizer.unnormalize(trajectories_slow, 'observations')
+-        unnormalized_obs_inmotile = dataset.normalizer.unnormalize(trajectories_inmotile, 'observations')
++        unnormalized_obs_slow = dataset.normalizer.unnormalize(normed_obs_slow, 'observations')
++        unnormalized_obs_inmotile = dataset.normalizer.unnormalize(normed_obs_inmotile, 'observations')
+ 
+         observations_moving.append(unnormalized_obs_moving)
+         observations_slow.append(unnormalized_obs_slow)
+         observations_inmotile.append(unnormalized_obs_inmotile)
+ 
++    # observations_moving = np.dstack(observations_moving)
++    observations_moving = np.concatenate(observations_moving, axis=1)
++    # observations_slow = np.dstack(observations_slow)
++    observations_slow = np.concatenate(observations_slow, axis=1)
++    # observations_inmotile = np.dstack(observations_inmotile)
++    observations_inmotile = np.concatenate(observations_inmotile, axis=1)
+ 
+ 
+-
+-    observations_moving = np.dstack(observations_moving)
+-    observations_slow = np.dstack(observations_slow)
+-    observations_inmotile = np.dstack(observations_inmotile)
+-
+     observations = np.concatenate([observations_moving, observations_slow, observations_inmotile], axis=0)
+     for k in range(len(observations)):
+         if make_subfolders:
+@@ -265,7 +273,6 @@ for i in range(n_sequences):
+             velocity_angle = vec2angle(rot_velocity, normalize=False)
+             correction_angle = vec2angle(rot_correction_angle_vector, normalize=False)
+ 
+-
+             aux_velocity_angle = vec2angle(np.array(velocity), normalize=False)
+             aux_correction_angle = vec2angle(np.array(correction_angle_vector), normalize=False)
+ 
+diff --git a/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py b/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py
+index 0419b66..ba2d109 100644
+--- a/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py
++++ b/scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py
+@@ -47,8 +47,8 @@ disp_min = 16
+ disp_max = 60
+ seq_len = 2
+ n_copies = 10
+-savebase = 'diffuser/datasets/synthdata_slow_sperm_real_init_cond_test_multi2'
+-data_file = 'diffuser/datasets/BezierSplinesData/slow'
++savebase = 'diffuser/datasets/synthdata_moving_sperm_real_init_cond_test_multi_t_10'
++data_file = 'diffuser/datasets/BezierSplinesData/moving'
+ 
+ cond_train = False
+ make_subfolders = False
+diff --git a/scripts/paper_images/generate_sperms_jsons_rans_simplified_gauss_init.py b/scripts/paper_images/generate_sperms_jsons_rans_simplified_gauss_init.py
+index 5b8c5fd..583c804 100644
+--- a/scripts/paper_images/generate_sperms_jsons_rans_simplified_gauss_init.py
++++ b/scripts/paper_images/generate_sperms_jsons_rans_simplified_gauss_init.py
+@@ -49,7 +49,7 @@ seq_len = 1
+ # savebase = 'diffuser/datasets/synthdata_20240207'
+ # savebase = 'diffuser/datasets/synthdata_20240210'
+ # savebase = 'diffuser/datasets/synthdata_20240212'
+-savebase = 'diffuser/datasets/synthdata_20240223'
++savebase = 'diffuser/datasets/synthdata_stopped_sperm2'
+ 
+ make_subfolders = False
+ use_end_condition = False
+diff --git a/scripts/paper_images/generate_yolo_labels.py b/scripts/paper_images/generate_yolo_labels.py
+index e69de29..47bddaf 100644
+--- a/scripts/paper_images/generate_yolo_labels.py
++++ b/scripts/paper_images/generate_yolo_labels.py
+@@ -0,0 +1,328 @@
++import ast
++import json
++import os
++import random
++
++import cv2
++import numpy as np
++
++import matplotlib.pyplot as plt
++
++from diffuser.environments.utils.Bezier import Bezier
++import matplotlib as mpl
++from scipy import signal
++import pandas as pd
++
++only_one_class = True
++save_B_set = False
++random_test = False
++percent_train = 1.0
++verbose = 0
++seed = 1
++correction_box_size = [0.005, 0.005]
++# default_box_size = [0.007031249999999999, 0.0087890625]
++default_box_size = [0.015, 0.015]
++default_box_std = [1e-3, 1e-3]
++os.environ['PYTHONHASHSEED'] = str(seed)
++random.seed(seed)
++# tf.random.set_seed(seed)
++np.random.seed(seed)
++
++original_shape = (1024, 1280)
++video_size = (536, 350)
++
++spline_path = 'diffuser/datasets/synthdata_20240308/2024-02-23:14-42/field_{}/json_bezier_spline'
++
++splines_names = [spline_path.format(str(i)) for i in range(0, 84)]
++
++save_train_A = 'diffuser/datasets/synthdata_20240308/images'
++save_test_A = 'diffuser/datasets/synthdata_20240308/removetestFullBezierImage_20240213'
++save_train_labels_A = 'diffuser/datasets/synthdata_20240308/labels'
++
++aux_path_A = save_train_A.replace('train', 'aux')
++os.makedirs(aux_path_A, exist_ok=True)
++os.makedirs(save_train_labels_A, exist_ok=True)
++
++font = cv2.FONT_HERSHEY_SIMPLEX
++
++def read_json(path):
++    with open(path, 'r') as openfile:
++        # Reading from json file
++        json_object = json.load(openfile)
++    json_object = ast.literal_eval(json_object)
++    return json_object
++
++def gaussian_heatmap(center = (2, 2), image_size = (10, 10), sig = 1):
++    """
++    It produces single gaussian at expected center
++    :param center:  the mean position (X, Y) - where high value expected
++    :param image_size: The total image size (width, height)
++    :param sig: The sigma value
++    :return:
++    """
++    x_axis = np.linspace(0, image_size[0]-1, image_size[0]) - center[0]
++    y_axis = np.linspace(0, image_size[1]-1, image_size[1]) - center[1]
++    xx, yy = np.meshgrid(x_axis, y_axis)
++    kernel = np.exp(-0.5 * (np.square(xx) + np.square(yy)) / np.square(sig))
++    return kernel
++
++def paint_sperm(full_image, sperm_image, head_coord, sperm_img_shape):
++    min_y = int(head_coord[1] - int(sperm_img_shape[0] / 2))
++    max_y = int(head_coord[1] + int(sperm_img_shape[0] / 2))
++    min_x = int(head_coord[0] - int(sperm_img_shape[1] / 2))
++    max_x = int(head_coord[0] + int(sperm_img_shape[1] / 2))
++    try:
++        full_image[min_y:max_y, min_x:max_x, :] = \
++            np.clip(full_image[min_y:max_y, min_x:max_x, :] + sperm_image, 0, 255)
++        painted = True
++    except:
++        new_min_y = 0 if min_y >= 0 else np.abs(min_y)
++        new_max_y = sperm_image.shape[0] if max_y <= full_image.shape[0] else -np.abs(full_image.shape[0] - max_y)
++        new_min_x = 0 if min_x >= 0 else np.abs(min_x)
++        new_max_x = sperm_image.shape[1] if max_x <= full_image.shape[1] else -np.abs(full_image.shape[1] - max_x)
++        min_y = min_y if min_y >= 0 else 0
++        max_y = max_y if max_y < full_image.shape[0] else full_image.shape[0]
++        min_x = min_x if min_x >= 0 else 0
++        max_x = max_x if max_x < full_image.shape[1] else full_image.shape[1]
++        new_sperm_image = sperm_image[new_min_y:new_max_y, new_min_x:new_max_x]
++
++        try:
++            full_image[min_y:max_y, min_x:max_x, :] = \
++                np.clip(full_image[min_y:max_y, min_x:max_x, :] + new_sperm_image, 0, 255)
++            painted = True
++        except:
++            painted = False
++
++    return full_image, painted
++
++def plt2opencv(coordinates, img_size, resize=None, linewidth=5):
++    plt.style.use('dark_background')
++    plt.figure()
++    circle = plt.Circle((coordinates[-1, 0],  # x-coordinates.
++                          coordinates[-1, 1]), 5, color='w')
++    fig, ax = plt.subplots()  # note we must use plt.subplots, not plt.subplot
++    ax.add_patch(circle)
++    plt.plot(coordinates[:, 0],  # x-coordinates.
++             coordinates[:, 1], '-w',  linewidth=linewidth)  # y-coordinates.
++
++
++    plt.xlim([0, img_size[1]])
++    plt.ylim([0, img_size[0]])
++    plt.axis('off')
++    # plt.grid()
++    fig = plt.gcf()
++    fig.canvas.draw()
++    graph_array = np.array(fig.canvas.renderer.buffer_rgba())
++    # Convert the RGBA array to RGB
++    graph_rgb = cv2.cvtColor(graph_array, cv2.COLOR_RGBA2BGR)
++
++    if resize is not None:
++        graph_rgb = cv2.resize(graph_rgb, (resize[1], resize[0]))
++
++    plt.close()
++    return graph_rgb
++
++synth_counter = 0
++
++for sequence in splines_names:
++    print('Processing: ", sequence')
++
++    splines_dict = {}
++    for path, directories, files in os.walk(sequence):
++        img_shape = None
++        sperm_id = None
++        spline_params = []
++        spline_line_space = []
++        head_coordinates = []
++        correction_angle = []
++        frame_number = []
++        spline_img_shape = []
++        sperm_class = []
++
++        files.sort()
++        for f in files:
++            if f.endswith('.json'):
++                json_data = read_json(os.path.join(path, f))
++                if img_shape is None:
++                    img_shape = json_data['img_shape']
++                if sperm_id is None:
++                    sperm_id = str(path.split('.')[0].split('_')[-1]) # TODO: Swap to = json_data['sperm_id']
++                spline_params.append(json_data['spline_params'])
++                spline_line_space.append(json_data['spline_line_space'])
++                head_coordinates.append(json_data['head_coordinates'])
++                frame_number.append(json_data['head_coordinates'][-1])
++                correction_angle.append(json_data['correction_angle'])
++                spline_img_shape.append(json_data['img_shape'])
++                sperm_class.append(json_data['img_shape'])
++
++        if sperm_id is not None:
++            splines_dict[int(sperm_id)] = {'spline_params': spline_params,
++                                            'spline_line_space': spline_line_space,
++                                            'head_coordinates': head_coordinates,
++                                            'correction_angle': correction_angle,
++                                            'frame_number': frame_number,
++                                            'spline_img_shape': spline_img_shape,
++                                            'sperm_class': sperm_class}
++
++    # Synthetic Splines
++    for i in range(len(files)):
++        new_frame = np.zeros((video_size[1]*2, video_size[0]*2, 3), dtype=np.uint8)
++
++        labels_array = []
++        index_correction = {}  # correct the access index in case it found any lost frame
++        graph_array = None
++        for key in splines_dict.keys():
++            index_correction[key] = 0
++
++        graph_frame = np.zeros((original_shape[0], original_shape[1], 3), dtype=np.uint8)
++        aux_frame = np.zeros((original_shape[0], original_shape[1], 3), dtype=np.uint8)
++
++        x_a = []
++        y_a = []
++        x_h = []
++        y_h = []
++        for key in splines_dict.keys():
++            try:
++                current_sperm = splines_dict[key]
++                spline_params = current_sperm['spline_params'][i]
++                spline_line_space = current_sperm['spline_line_space'][i]
++                head_coordinates = current_sperm['head_coordinates'][i]
++                correction_angle = current_sperm['correction_angle'][i]
++                frame_number = current_sperm['frame_number'][i]
++                spline_img_shape = current_sperm['spline_img_shape'][i]
++                sperm_class = current_sperm['sperm_class'][i]
++
++                # x_head = ((spline_params[-1][0] / 70.)-1.)/original_shape[1]
++                # y_head = ((spline_params[-1][1] / 70.)-1.)/original_shape[0]
++                # rot = mpl.transforms.Affine2D().rotate_deg(correction_angle)
++                rot = mpl.transforms.Affine2D().rotate_deg_around(int(spline_img_shape[1] / 2), int(spline_img_shape[0] / 2), 360-correction_angle)
++                rot_params = rot.transform(spline_params)
++
++                # displ = (np.asarray(spline_line_space[-1]) - 70.) - rot_params[-1]
++                # rot_params += displ
++
++                x_head = rot_params[-1][0] - int(spline_img_shape[1] / 2)
++                y_head = rot_params[-1][1] - int(spline_img_shape[0] / 2)
++
++                x = (head_coordinates[0] + x_head)/original_shape[1]  # Calculate the center of the bbox
++                y = (head_coordinates[1] + y_head)/original_shape[0]  # Calculate the center of the bbox
++
++                box_size = [np.random.normal(default_box_size[1], default_box_std[1]), np.random.normal(default_box_size[1], default_box_std[1])]
++
++                x = x + (correction_box_size[1]/2)
++                y = y + (correction_box_size[0]/2)
++
++                x_centre = (head_coordinates[0]) /original_shape[1]  # Calculate the center of the bbox
++                y_centre = (head_coordinates[1]) / original_shape[0]  # Calculate the center of the bbox
++
++
++                # if np.min(x) > 0.015 and np.max(x) < 0.985 and np.min(y) > 0.015 and np.max(y) < 0.985:
++
++                # if only_one_class:
++                #     labels_array.append([0, x, y, *default_box_size])
++                # else:
++                #     labels_array.append([sperm_class, x, y, *default_box_size])
++
++                ########################################################################################################
++                #      Uncomment to use scipy splines
++                ########################################################################################################
++                # ys_smooth = splev(spline_line_space, spline_params)
++                #
++                # ys_smooth = ys_smooth
++                # spline_line_space = np.asarray(spline_line_space)
++                #
++                # point_pairs = np.concatenate([np.expand_dims(spline_line_space, axis=-1), np.expand_dims(ys_smooth, axis=-1)], axis=1)
++                ########################################################################################################
++                #      Uncomment to use Bezier Splines
++                ########################################################################################################
++                linspace = np.linspace(0., 1., num=20)
++                point_pairs = Bezier.Curve(linspace, np.asarray(spline_params))
++                ########################################################################################################
++                #
++                ########################################################################################################
++
++                image = plt2opencv(point_pairs, spline_img_shape, resize=spline_img_shape)
++
++                M = cv2.getRotationMatrix2D((int(spline_img_shape[1] / 2), int(spline_img_shape[0] / 2)), correction_angle, 1.0)
++                image = cv2.warpAffine(image, M, spline_img_shape)
++
++                if graph_array is None:
++                    graph_array = np.copy(graph_frame)
++
++                graph_array, painted = paint_sperm(graph_array, image, head_coordinates, spline_img_shape)
++
++                if painted and (np.min(x) > 0.0 and np.max(x) < 1.0 and np.min(y) > 0.00 and np.max(y) < 1.0):
++
++                    if only_one_class:
++                        labels_array.append([0, x, y, *box_size])
++                    else:
++                        labels_array.append([sperm_class, x, y, *box_size])
++                    x_a.append(x)
++                    y_a.append(y)
++                    x_h.append(x_centre)
++                    y_h.append(y_centre)
++
++                    # plt.figure(3)
++                    # plt.imshow(graph_array)
++                    # plt.scatter(np.array(x_a)*original_shape[1], np.array(y_a)*original_shape[0], c='r', marker='.')
++                    # plt.scatter(np.array(x_h)*original_shape[1], np.array(y_h)*original_shape[0], c='b', marker='.')
++                    # plt.ylim(0, original_shape[0])
++                    # plt.xlim(0, original_shape[1])
++                    # plt.show()
++            except:
++                index_correction[key] -= 1  # Correct the frame index
++
++        # plt.figure(12, 8)
++        # # plt.imshow(graph_array)
++        # plt.scatter(x_a, y_a, c='r', marker='.')
++        # plt.scatter(x_h, y_h, c='b', marker='.')
++        # plt.ylim(0, 1)
++        # plt.xlim(0, 1)
++        # plt.show()
++
++        # plt.figure(3)
++        # plt.imshow(graph_array)
++        # plt.scatter(np.array(x_a)*original_shape[1], np.array(y_a)*original_shape[0], c='r', marker='.')
++        # plt.ylim(0, original_shape[0])
++        # plt.xlim(0, original_shape[1])
++        # plt.show()
++        if graph_array is not None:
++            graph_array = cv2.resize(graph_array, video_size)
++
++            if verbose > 0:
++                cv2.imshow('splines frames', graph_array)
++                cv2.waitKey(1)
++
++            cv2.imwrite(os.path.join(aux_path_A, str(synth_counter).zfill(6) + '.png'), graph_array)
++
++            df = pd.DataFrame(labels_array, columns=["class", "x", "y", "w", "h"])
++            df.to_csv(os.path.join(save_train_labels_A, str(synth_counter).zfill(6) + '.txt'), sep=' ', index=False, header=False)
++
++            synth_counter += 1
++
++os.makedirs(save_train_A, exist_ok=True)
++img_A = os.listdir(aux_path_A)
++
++if random_test:
++    A_idx = np.random.choice([i for i in range(len(img_A))], len(img_A), replace=False)
++else:
++    A_idx = [i for i in range(len(img_A))]
++
++train_A_idx = A_idx[:int(len(A_idx)*percent_train)]
++test_A_idx = A_idx[int(len(A_idx)*percent_train):]
++train_A = np.asarray(img_A)[train_A_idx]
++test_A = np.asarray(img_A)[test_A_idx]
++
++for A in test_A:
++    print('Writing test: ', A)
++    img = cv2.imread(os.path.join(aux_path_A, A))
++    cv2.imwrite(os.path.join(save_test_A, A), img)
++    os.remove(os.path.join(aux_path_A, A))
++
++os.remove(aux_path_A)
++
++
++
++
++
++
+diff --git a/scripts/paper_images/render_utils.py b/scripts/paper_images/render_utils.py
+index 13684be..8e8af49 100644
+--- a/scripts/paper_images/render_utils.py
++++ b/scripts/paper_images/render_utils.py
+@@ -233,7 +233,7 @@ def plt2opencv_paper(coordinates, real_coords=None, img_size=None, resize=None,
+         plt.plot(
+             parameters[:, 0],  # x-coordinates.
+             parameters[:, 1],  # y-coordinates.
+-            color=colors['blue'],
++            color=colors['pink'],
+             linestyle=':',
+             marker='o',
+             markersize=linewidth*1.5,
+diff --git a/scripts/train_sperm.py b/scripts/train_sperm.py
+index e28049d..6471d35 100644
+--- a/scripts/train_sperm.py
++++ b/scripts/train_sperm.py
+@@ -21,7 +21,6 @@ class Parser(utils.Parser):
+ 
+ args = Parser().parse_args('diffusion')
+ 
+-
+ #-----------------------------------------------------------------------------#
+ #---------------------------------- dataset ----------------------------------#
+ #-----------------------------------------------------------------------------#
