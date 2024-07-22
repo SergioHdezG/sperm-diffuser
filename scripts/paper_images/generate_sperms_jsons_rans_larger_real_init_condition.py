@@ -43,8 +43,8 @@ std_n_sperm = 34.13
 n_sequences = 6
 seq_len = 2
 n_copies = 10
-savebase = 'diffuser/datasets/synthdata_stopped_sperm_real_init_cond_test_multi3'
-data_file = 'diffuser/datasets/BezierSplinesData/slow'
+savebase = 'diffuser/datasets/synthdata_progressive_sperm_real_init_cond'
+data_file = 'diffuser/datasets/BezierSplinesData/progressive'
 
 cond_train = False
 make_subfolders = False

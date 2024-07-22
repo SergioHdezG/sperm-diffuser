@@ -42,10 +42,10 @@ class Parser(utils.Parser):
 args = Parser().parse_args('diffusion')
 
 save_figures = True
-data_file = 'diffuser/datasets/BezierSplinesData/stopped'
+data_file = 'diffuser/datasets/BezierSplinesData/progressive'
+synth_data_file = 'diffuser/datasets/synthdata_progressive_sperm/progressive_data'
 
-figures_path = 'diffuser/datasets/SyntheticData/synthdata_stopped_sperm_real_init_cond_test_multi3/'
-synth_data_file = 'diffuser/datasets/SyntheticData/synthdata_stopped_sperm_real_init_cond_test_multi3/2024-03-05:16-29'
+figures_path = 'diffuser/datasets/synthdata_progressive_sperm'
 
 #-----------------------------------------------------------------------------#
 #------------------------------loading real data------------------------------#

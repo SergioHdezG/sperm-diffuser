@@ -44,12 +44,7 @@ disp_min = 16
 disp_max = 60
 seq_len = 1
 
-# savebase = 'diffuser/datasets/synthdata_20231109'
-# savebase = 'diffuser/datasets/synthdata_20240111'
-# savebase = 'diffuser/datasets/synthdata_20240207'
-# savebase = 'diffuser/datasets/synthdata_20240210'
-# savebase = 'diffuser/datasets/synthdata_20240212'
-savebase = 'diffuser/datasets/synthdata_slow_sperm4'
+savebase = 'diffuser/datasets/synthdata_progressive_sperm'
 
 make_subfolders = False
 use_end_condition = False

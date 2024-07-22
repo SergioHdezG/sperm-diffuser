@@ -10,18 +10,13 @@ This repository is organized in three branches.
 </p>
 
 
-[//]: # (## Installation)
+## Installation
 
-[//]: # ()
-[//]: # (```)
-
-[//]: # (conda env create -f environment.yml)
-
-[//]: # (conda activate diffuser)
-
-[//]: # (pip install -e .)
-
-[//]: # (```)
+```
+conda env create -f environment.yml
+conda activate sperm_diffuser
+pip install -e .
+```
 
 ## Training the model
 
@@ -35,21 +30,40 @@ python scripts/train_sperm -dataset SingleSpermBezierIncrementsDataAugSimplified
 The default hyperparameters are listed in [locomotion:diffusion](config/locomotion.py#L22-L65).
 You can override any of them with flags, eg, `--n_diffusion_steps 100`.
 
-## Generate individual spermatozoa trajectories
+## Generate dataset 
 
-Two ways to generate new sperm trajectories are provided:
+Next script generate sperm trajectories organized in different folders to create a dataset of schematic videos and its corresponding labels. 
 
-1. If given an initial condition coming from the real dataset ([BezierSplinesData](https://github.com/SergioHdezG/sperm-diffuser/diffuser/datasets/BezierSplinesData)), the model generate new trajectories from the given real initial condition:
+Adjust implicit parameters in the script to obtain the desired results:
+- mean_n_sperms: mean number of spermatozoa per video
+- std_n_sperm: standard deviation of number of spermatozoa per video
+- n_sequences: number of videos to generate
+- seq_len: seq_len * horizon denotes the length of the videos to be generated
+- make_subfolders (bool): if True an independent folder is created for each video, if False all the sequences are store inside a folder (use False if ) 
+Run the generation process given an initial gaussian condition:
+```
+python scripts/generate_sperms_jsons_dataset_gauss_init.py --dataset SingleSpermBezierIncrementsDataAugSimplified-v0 --logbase logs --diffusion_loadpath diffusion/defaults_H16_T20/progressive_model --policy sampling.DiffPolicy --horizon 16
+```
+
+
+
+## Generate Schematic videos and YOLO labels
+
+
+Adjust implicit parameters in the script to obtain the desired results:
+- resize_img: tuple (h, w) or None to use original video resolution (1024, 1280)
+- only_one_class (bool): if True all the bboxes are labeled as class '0', if False progressive, slow and inmotile sperm ara labeled as classes {'0', '1','2'}
+- spline_path: path to load the parameters of the generated spermatozoa.
+- save_train, save_train_labels_yolo, save_train_labels_complete_csv: path to save images, yolo labels and csv containing all the parameters of the spermatozoon model.
 
 ```
-python scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py -dataset SingleSpermBezierIncrementsDataAugSimplified-v0 -dataset diffuser/datasets/BezierSplinesData/slow
+python scripts/generate_yolo_labels.py 
 ```
 
-2. If no access to the real conditions is available, we allow generation given a random sampled initial condition. These conditions are sampled from a multivariate gaussian distribution fitted to the values of the parameters in the real dataset ([BezierSplinesData](https://github.com/SergioHdezG/sperm-diffuser/diffuser/datasets/BezierSplinesData)). The next program generates a complete dataset of synthetic spermatozoa using the trained diffusion models for progressive, slow progressive and inmotile sperm.
+## Style transfer and YOLO training
 
-```
-python scripts/paper_images/generate_sperms_jsons_dataset_gauss_init.py -dataset SingleSpermBezierIncrementsDataAugSimplified-v0 -dataset ...
-```
+In order to obtain photorealistic frames use the procedure provided in [style-transfer branch](https://github.com/SergioHdezG/tree/style-transfer).
+In order to train a YOLO model use [sperm-detection branch](https://github.com/SergioHdezG/tree/sper-detection).
 
 ## Reproducibility
 
@@ -62,3 +76,34 @@ python scripts/train_sperm.py --horizon 16 --sample_freq 250 --diffusion models.
 python scripts/train_sperm.py --horizon 16 --sample_freq 250 --diffusion models.GaussianDiffusionImitationCondition --n_train_steps 10000 --n_steps_per_epoch 2000 --save_freq 1000 --action_weight 0 --loader datasets.SequenceDatasetSpermNormalized --loss_type sperm_loss --renderer utils.EMARenderer --n_diffusion_steps 20 --learning_rate 2e-5 ----data_file diffuser/datasets/BezierSplinesData/inmotile
 ```
 
+2. Generate spermatozoa trajectories of each type using a real or a gaussian sampled condition.
+- Progressive trajectories from real condition
+```
+python scripts/paper_images/generate_sperms_jsons_rans_larger_real_init_condition.py --dataset SingleSpermBezierIncrementsDataAugSimplified-v0 --logbase logs --diffusion_loadpath diffusion/defaults_H16_T20/progressive_model --policy sampling.DiffPolicy --horizon 16
+```
+- Progressive trajectories from gaussian condition. Uses data from [BezierSplinesData](https://github.com/SergioHdezG/sperm-diffuser/diffuser/datasets/BezierSplinesData) to obtain the initial conditions.
+```
+python scripts/paper_images/generate_sperms_jsons_simplified_gauss_init.py --dataset SingleSpermBezierIncrementsDataAugSimplified-v0 --logbase logs --diffusion_loadpath diffusion/defaults_H16_T20/progressive_model --policy sampling.DiffPolicy --horizon 16
+```
+- Slow trajectories from real condition. Use next parameter on ``` generate_sperms_jsons_rans_larger_real_init_condition.py```: ```--diffusion_loadpath diffusion/defaults_H16_T20/progressive_model```
+- Slow trajectories from gaussian condition. Use next parameter on ``` generate_sperms_jsons_simplified_gauss_init.py```: ```--diffusion_loadpath diffusion/defaults_H16_T20/progressive_model```
+- Inmotile trajectories from real condition. Use next parameter on ``` generate_sperms_jsons_rans_larger_real_init_condition.py```: ```--diffusion_loadpath diffusion/defaults_H16_T20/inmotile_model```
+- Inmotile trajectories from gaussian condition. Use next parameter on ``` generate_sperms_jsons_simplified_gauss_init.py```: ```--diffusion_loadpath diffusion/defaults_H16_T20/inmotile_model```
+
+3. Obtain metrics:
+
+Use the next script to obtain KL distance measures:
+```
+python scripts/measurements/measure_generated_dataset_simplified_model.py 
+```
+
+Use the next script to obtain other measures:
+
+```
+python scripts/measurements/measure_EMD2traj_generated_dataset_simplified_model.py
+```
+
+Note that the paths needs to be set to load the desired dataset:
+- data_file: Ground truth data ('diffuser/datasets/BezierSplinesData/progressive').
+- synth_data_file: Synthetic data path ('diffuser/datasets/synthdata_progressive_sperm/progressive_data').
+- figures_path: path to save figures.
