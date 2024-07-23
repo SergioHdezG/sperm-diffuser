@@ -15,15 +15,17 @@ import module
 # ==============================================================================
 # =                                   param                                    =
 # ==============================================================================
-py.arg('--output_dir', default='BezierImage2SpermImage2')
-py.arg('--dataset', default='FulBezierSplines2FulSperm')
+py.arg('--output_dir', default='november/SynthBezier2RealImg3')
+py.arg('--dataset', default='SynthBezier2RealImg')
 py.arg('--datasets_dir', default='datasets')
-py.arg('--load_size', type=int, default=350)  # load image to this size
-py.arg('--crop_size', type=int, default=256)  # then crop to this size
-py.arg('--batch_size', type=int, default=2)
-py.arg('--epochs', type=int, default=200)
-py.arg('--epoch_decay', type=int, default=100)  # epoch to start decaying learning rate
-py.arg('--lr', type=float, default=0.0002)
+py.arg('--load_size_A', type=int, default=675)  # load image to this size
+py.arg('--load_size_B', type=int, default=675)  # load image to this size
+py.arg('--crop_size', type=int, default=500)  # then crop to this size
+py.arg('--batch_size', type=int, default=4)
+py.arg('--epochs', type=int, default=400)
+py.arg('--epoch_decay', type=int, default=200)  # epoch to start decaying learning rate
+py.arg('--G_lr', type=float, default=0.0002)
+py.arg('--D_lr', type=float, default=0.0002)
 py.arg('--beta_1', type=float, default=0.5)
 py.arg('--adversarial_loss_mode', default='lsgan', choices=['gan', 'hinge_v1', 'hinge_v2', 'lsgan', 'wgan'])
 py.arg('--gradient_penalty_mode', default='none', choices=['none', 'dragan', 'wgan-gp'])
@@ -31,11 +33,13 @@ py.arg('--gradient_penalty_weight', type=float, default=10.0)
 py.arg('--cycle_loss_weight', type=float, default=10.0)
 py.arg('--identity_loss_weight', type=float, default=0.0)
 py.arg('--pool_size', type=int, default=50)  # pool size to store fake samples
-py.arg('--trainA', type=str, default='trainFulBezierImage')  # pool size to store fake samples
-py.arg('--trainB', type=str, default='trainFulSpermImage')  # pool size to store fake samples
-py.arg('--testA', type=str, default='testFulBezierImage')  # pool size to store fake samples
-py.arg('--testB', type=str, default='testFulSpermImage')  # pool size to store fake samples
-py.arg('--fileExtension', type=str, default='png')  # pool size to store fake samples
+py.arg('--trainA', type=str, default='trainFullBezierImage')  # pool size to store fake samples
+py.arg('--trainB', type=str, default='trainFullSpermImage')  # pool size to store fake samples
+py.arg('--testA', type=str, default='testFullBezierImage')  # pool size to store fake samples
+py.arg('--testB', type=str, default='testFullSpermImage')  # pool size to store fake samples
+py.arg('--fileExtensionA', type=str, default='png')  # pool size to store fake samples
+py.arg('--fileExtensionB', type=str, default='png')  # pool size to store fake samples
+
 args = py.args()
 
 
@@ -51,16 +55,18 @@ py.args_to_yaml(py.join(output_dir, 'settings.yml'), args)
 # =                                    data                                    =
 # ==============================================================================
 
-A_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainA), '*.'+args.fileExtension)
-B_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainB), '*.'+args.fileExtension)
-A_B_dataset, len_dataset = data.make_zip_dataset(A_img_paths, B_img_paths, args.batch_size, args.load_size, args.crop_size, training=True, repeat=False)
+A_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainA), '*.'+args.fileExtensionA)
+B_img_paths = py.glob(py.join(args.datasets_dir, args.dataset, args.trainB), '*.'+args.fileExtensionB)
+
+
+A_B_dataset, len_dataset = data.make_zip_dataset(A_img_paths, B_img_paths, args.batch_size, args.load_size_A, args.crop_size, training=True, repeat=False, load_size_B=args.load_size_B)
 
 A2B_pool = data.ItemPool(args.pool_size)
 B2A_pool = data.ItemPool(args.pool_size)
 
-A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA), '*.'+args.fileExtension)
-B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtension)
-A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, 1, args.load_size, args.crop_size, training=False, repeat=True)
+A_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testA), '*.'+args.fileExtensionA)
+B_img_paths_test = py.glob(py.join(args.datasets_dir, args.dataset, args.testB), '*.'+args.fileExtensionB)
+A_B_dataset_test, _ = data.make_zip_dataset(A_img_paths_test, B_img_paths_test, 1, args.load_size_A, args.crop_size, training=False, repeat=True, load_size_B=args.load_size_B)
 
 
 # ==============================================================================
@@ -77,8 +83,8 @@ d_loss_fn, g_loss_fn = gan.get_adversarial_losses_fn(args.adversarial_loss_mode)
 cycle_loss_fn = tf.losses.MeanAbsoluteError()
 identity_loss_fn = tf.losses.MeanAbsoluteError()
 
-G_lr_scheduler = module.LinearDecay(args.lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
-D_lr_scheduler = module.LinearDecay(args.lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
+G_lr_scheduler = module.LinearDecay(args.G_lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
+D_lr_scheduler = module.LinearDecay(args.D_lr, args.epochs * len_dataset, args.epoch_decay * len_dataset)
 G_optimizer = keras.optimizers.Adam(learning_rate=G_lr_scheduler, beta_1=args.beta_1)
 D_optimizer = keras.optimizers.Adam(learning_rate=D_lr_scheduler, beta_1=args.beta_1)
 
@@ -117,7 +123,8 @@ def train_G(A, B):
                       'A2B2A_cycle_loss': A2B2A_cycle_loss,
                       'B2A2B_cycle_loss': B2A2B_cycle_loss,
                       'A2A_id_loss': A2A_id_loss,
-                      'B2B_id_loss': B2B_id_loss}
+                      'B2B_id_loss': B2B_id_loss,
+                      'loss': G_loss}
 
 
 @tf.function
@@ -141,7 +148,8 @@ def train_D(A, B, A2B, B2A):
     return {'A_d_loss': A_d_loss + B2A_d_loss,
             'B_d_loss': B_d_loss + A2B_d_loss,
             'D_A_gp': D_A_gp,
-            'D_B_gp': D_B_gp}
+            'D_B_gp': D_B_gp,
+            'loss': D_loss}
 
 
 def train_step(A, B):

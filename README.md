@@ -1,101 +1,38 @@
-***News***
+# Real-like synthetic sperm video generation from learnt behaviours (Style Transfer) &nbsp;&nbsp; 
 
-- We re-implement CycleGAN by **Tensorflow 2**! The old versions are here: [v1](https://github.com/LynnHo/CycleGAN-Tensorflow-PyTorch/tree/v1), [v0](https://github.com/LynnHo/CycleGAN-Tensorflow-PyTorch/tree/v0).
+This branch uses the tensorflow 2 implementation of CycleGAN: [CycleGAN-Tensorflow-2](https://github.com/LynnHo/CycleGAN-Tensorflow-2).
 
-<hr style="height:1px" />
+The repository is organized in three branches.
 
-<p align="center"> <img src="./pics/horse2zebra.gif" width="100%" /> </p>
+- The [main branch](https://github.com/SergioHdezG/sperm-diffuser) contains the diffusion model to generate schematic sperm videos. It includes the pipeline to generate individual spermatozoon trajectories and annotated videos of multiple schematic spermatozoa. This branch makes use of a modified version of the diffusion model proposed by Janner et al. [[Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser)].
+- The [style-transfer branch](https://github.com/SergioHdezG/sperm-diffuser/tree/style-transfer) contains tools to transform the schematic videos generated with the diffusion model into real-like style. This branch makes use of a Cyclical Generative Adversarial Network to perform the style transfer.
+- The [sperm-detection branch](https://github.com/SergioHdezG/sperm-diffuser/tree/sperm-detection) consist of a fork of [YOLOv5 from ultralytics](https://github.com/ultralytics/yolov5) from ultralitycs adapted to perform our evaluation pipeline on sperm detection.
+<p align="center">
+    <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/abstract_spermdiffuser_v2.png" width="99%" title="Abstract">
+    <br>
+    <em>Figure:</em> Upper row summarizes the process to obtain individual parametrized trajectories of spermatozoa by applying classic computer vision techniques. Bottom row shows the proposed method to generate individual spermatozoa trajectories from a noisy input with a diffusion model and the subsequent style transfer procedure.
+</p>
 
-<hr style="height:1px" />
+# Installation
 
-# <p align="center"> CycleGAN - Tensorflow 2 </p>
+```console
+conda create -n tensorflow-2.2 python=3.6
+source activate tensorflow-2.2
+conda install scikit-image tqdm tensorflow-gpu=2.2
+conda install -c conda-forge oyaml
+pip install tensorflow-addons==0.10.0
+```
 
-Tensorflow 2 implementation of CycleGAN.
+# Use the trained model
 
-Paper: [Unpaired Image-to-Image Translation using Cycle-Consistent Adversarial Networks](https://arxiv.org/pdf/1703.10593.pdf)
+```
+python test.py --experiment_dir output/november/SynthBezier2RealImg --checkpoint_dir output/november/SynthBezier2RealImg3/checkpoints_BCK2
+```
 
-Author: [Jun-Yan Zhu ](https://people.eecs.berkeley.edu/~junyanz/) *et al.*
+# Train a new model
 
-## Exemplar results
-
-### summer2winter
-
-row 1: summer -> winter -> reconstructed summer, row 2: winter -> summer -> reconstructed winter
-
-<p align="center"> <img src="./pics/summer2winter.jpg" width="100%" /> </p>
-
-### horse2zebra
-
-row 1: horse -> zebra -> reconstructed horse, row 2: zebra -> horse -> reconstructed zebra
-
-<p align="center"> <img src="./pics/horse2zebra.jpg" width="100%" /> </p>
-
-### apple2orange
-
-row 1: apple -> orange -> reconstructed apple, row 2: orange -> apple -> reconstructed orange
-
-<p align="center"> <img src="./pics/apple2orange.jpg" width="100%" /> </p>
-
-# Usage
-
-- Environment
-
-    - Python 3.6
-
-    - TensorFlow 2.2, TensorFlow Addons 0.10.0
-
-    - OpenCV, scikit-image, tqdm, oyaml
-
-    - *we recommend [Anaconda](https://www.anaconda.com/distribution/#download-section) or [Miniconda](https://docs.conda.io/en/latest/miniconda.html#linux-installers), then you can create the TensorFlow 2.2 environment with commands below*
-
-        ```console
-        conda create -n tensorflow-2.2 python=3.6
-
-        source activate tensorflow-2.2
-
-        conda install scikit-image tqdm tensorflow-gpu=2.2
-
-        conda install -c conda-forge oyaml
-
-        pip install tensorflow-addons==0.10.0
-        ```
-
-    - *NOTICE: if you create a new conda environment, remember to activate it before any other command*
-
-        ```console
-        source activate tensorflow-2.2
-        ```
-
-- Dataset
-
-    - download the summer2winter dataset
-
-        ```console
-        sh ./download_dataset.sh summer2winter_yosemite
-        ```
-
-    - download the horse2zebra dataset
-
-        ```console
-        sh ./download_dataset.sh horse2zebra
-        ```
-
-    - see [download_dataset.sh](./download_dataset.sh) for more datasets
-
-- Example of training
-
-    ```console
-    CUDA_VISIBLE_DEVICES=0 python train.py --dataset summer2winter_yosemite
-    ```
-
-    - tensorboard for loss visualization
-
-        ```console
-        tensorboard --logdir ./output/summer2winter_yosemite/summaries --port 6006
-        ```
-
-- Example of testing
-
-    ```console
-    CUDA_VISIBLE_DEVICES=0 python test.py --experiment_dir ./output/summer2winter_yosemite
-    ```
+Note that we are not allowed to share the original real images, therefore, we include a folder with real-looking synthetic images only for demonstration purposes. 
+For further information on how to use other features of the CycleGAN implementation we refer to [CycleGAN-Tensorflow-2](https://github.com/LynnHo/CycleGAN-Tensorflow-2).
+```
+python train.py --output_dir november/SynthBezier2RealImg3 --dataset SynthBezier2RealImg --trainA trainFullBezierImage --trainB trainFullSpermImage --testA testFullBezierImage --testB testFullSpermImage
+```
