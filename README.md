@@ -1,6 +1,6 @@
 # Real-like synthetic sperm video generation from learnt behaviours (Style Transfer) &nbsp;&nbsp; 
 
-This branch uses the tensorflow 2 implementation of CycleGAN: [CycleGAN-Tensorflow-2](https://github.com/LynnHo/CycleGAN-Tensorflow-2).
+This branch is a fork of the tensorflow 2 implementation of CycleGAN: [CycleGAN-Tensorflow-2](https://github.com/LynnHo/CycleGAN-Tensorflow-2).
 
 The repository is organized in three branches.
 
