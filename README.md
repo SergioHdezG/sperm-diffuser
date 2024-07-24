@@ -1,4 +1,4 @@
-# Real-like synthetic sperm video generation from learnt behaviours &nbsp;&nbsp; 
+# Real-like synthetic sperm video generation from learned behaviors &nbsp;&nbsp; 
 
 This repository is organized in three branches.
 
