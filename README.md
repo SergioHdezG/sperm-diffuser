@@ -11,7 +11,7 @@ This repository is organized in three branches.
     <em>Figure:</em> Upper row summarizes the process to obtain individual parametrized trajectories of spermatozoa by applying classic computer vision techniques. Bottom row shows the proposed method to generate individual spermatozoa trajectories from a noisy input with a diffusion model and the subsequent style transfer procedure.
 </p>
 
-
+.
 ## Installation
 
 ```
