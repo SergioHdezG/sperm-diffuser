@@ -1,12 +1,15 @@
-# Real-like synthetic sperm video generation from learnt behaviours &nbsp;&nbsp; 
+# Real-like synthetic sperm video generation from learned behaviors &nbsp;&nbsp; 
 
-This branch is a fork of [yolov5](https://github.com/ultralytics/yolov5) from Ultralytics.
+This branch is a fork of [yolov5](https://github.com/ultralytics/yolov5) from Ultralytics provided for ease of use on our synthetic dataset. For further information on how to use YOLO please go to the original repository.
 
 This repository is organized in three branches.
 
 - The [main branch](https://github.com/SergioHdezG/sperm-diffuser) contains the diffusion model to generate schematic sperm videos. It includes the pipeline to generate individual spermatozoon trajectories and annotated videos of multiple schematic spermatozoa. This branch makes use of a modified version of the diffusion model proposed by Janner et al. [[Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser)].
 - The [style-transfer branch](https://github.com/SergioHdezG/sperm-diffuser/tree/style-transfer) contains tools to transform the schematic videos generated with the diffusion model into real-like style. This branch makes use of a Cyclical Generative Adversarial Network to perform the style transfer.
 - The [sperm-detection branch](https://github.com/SergioHdezG/sperm-diffuser/tree/sperm-detection) consist of a fork of [YOLOv5 from ultralytics](https://github.com/ultralytics/yolov5) from ultralitycs adapted to perform our evaluation pipeline on sperm detection.
+
+The synthetically generated dataset is available in [dataset/synthetic_sperm_dataset.zip](https://github.com/SergioHdezG/sperm-diffuser/blob/main/synthetic_sperm_dataset.zip)
+
 <p align="center">
     <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/abstract_spermdiffuser_v2.png" width="99%" title="Abstract">
     <br>
