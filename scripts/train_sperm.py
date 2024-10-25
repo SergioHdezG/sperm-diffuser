@@ -30,13 +30,14 @@ dataset_config = utils.ConfigTrainTest(
     max_path_length=args.max_path_length,
 )
 
+dataset, testset = dataset_config(data_file=args.data_file)
+
 render_config = utils.ConfigTrainTest(
     args.renderer,
     savepath=(args.savepath, 'render_config.pkl'),
-    env=args.dataset,
+    env=dataset.env,
 )
 
-dataset, testset = dataset_config(data_file=args.data_file)
 renderer, _ = render_config()
 
 observation_dim = dataset.observation_dim

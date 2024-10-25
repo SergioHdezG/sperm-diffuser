@@ -4,7 +4,8 @@ import einops
 import imageio
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
-import gym
+# TODO: Remove gym dependencies
+# import gym
 import mujoco_py as mjc
 import warnings
 import pdb
@@ -12,7 +13,6 @@ import pdb
 from .arrays import to_np
 from .video import save_video, save_videos
 
-from diffuser.datasets.d4rl import load_environment
 from ..environments.utils.sperm_rendering import *
 
 
@@ -58,12 +58,15 @@ class MuJoCoRenderer:
     '''
 
     def __init__(self, env):
-        if type(env) is str:
-            env = env_map(env)
-            self.env = gym.make(env)
-        else:
-            self.env = env
+        # if type(env) is str:
+        #     env = env_map(env)
+        #     # TODO: Remove gym dependencies
+        #     # self.env = gym.make(env)
+        # else:
+        self.env = env
+
         ## - 1 because the envs in renderer are fully-observed
+        # TODO: Remove gym dependencies
         self.observation_dim = np.prod(self.env.observation_space.shape) - 1
         self.action_dim = np.prod(self.env.action_space.shape)
         print('[ utils/rendering ] Warning: could not initialize offscreen renderer')
