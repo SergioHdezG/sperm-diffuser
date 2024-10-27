@@ -920,14 +920,14 @@ class SingleSpermBezierIncrementsDataAugSimplified: # # TODO: Remove gym depende
         # video = 'diffuser/datasets/test-1-29-field_1_30/frames'
         # # TODO: self.frames creo que no se usa
         # self.frames = self._read_frames(video)
-        for path, directories, files in os.walk(self.data_file):
-            print(path)
-            if len(files) > 0 and files[0].endswith('.json'):
-                self.states, self.coords, self.angles, self.frames, self.params, self.comp_coords, self.comp_angl, self.comp_params = self._read_trajectory(
-                    path)
-                break
+        # for path, directories, files in os.walk(self.data_file):
+        #     print(path)
+        #     if len(files) > 0 and files[0].endswith('.json'):
+        #         self.states, self.coords, self.angles, self.frames, self.params, self.comp_coords, self.comp_angl, self.comp_params = self._read_trajectory(
+        #             path)
+        #         break
         # TODO: el for probablemente se pueda eliminar y en su lugar llamar a get_dataset
-        self._max_episode_steps = len(self.states) - 1
+        self._max_episode_steps = None #len(self.states) - 1
         self.max_timesteps = 15
         self.min_timesteps = 5
         self.step_counter = 0
@@ -1173,6 +1173,7 @@ class SingleSpermBezierIncrementsDataAugSimplified: # # TODO: Remove gym depende
 
         global GET_TRAIN_SET
         if GET_TRAIN_SET:
+            self._max_episode_steps = len(self.states) - 1
             dict = self._train_set
             GET_TRAIN_SET = False
         else:
