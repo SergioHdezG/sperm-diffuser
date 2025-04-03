@@ -1,5 +1,12 @@
 # Real-like synthetic sperm video generation from learned behaviors &nbsp;&nbsp; 
 
+<p align="center">
+    <img src="images/synthTest1.gif" width="40%" title="GIF 1">
+    <img src="images/synthTest2.gif" width="40%" title="GIF 2">
+</p>
+
+<p align="center"><em>Figure: Sequence of videos showing schematic frames modelled using the diffusion model output, alongside their photorealistic counterpart after style transfer.</em></p>
+
 This branch is a fork of [yolov5](https://github.com/ultralytics/yolov5) from Ultralytics provided for ease of use on our synthetic dataset. For further information on how to use YOLO please go to the original repository.
 
 This repository is organized in three branches.
