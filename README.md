@@ -1,12 +1,11 @@
 # Real-like synthetic sperm video generation from learned behaviors  &nbsp;&nbsp; 
 
 <p align="center">
-    <img src="images/synthTest.gif" width="30%" title="GIF 1">
-<!--     <img src="images/gif2.gif" width="30%" title="GIF 2">
-    <img src="images/gif3.gif" width="30%" title="GIF 3"> -->
+    <img src="images/synthTest1.gif" width="30%" title="GIF 1">
+    <img src="images/synthTest2.gif" width="30%" title="GIF 2">
 </p>
 
-<p align="center"><em>Figure: Schematic sperm frames modelled using the diffusion model and their photorealistic counterpart after style transfer.</em></p>
+<p align="center"><em>Figure: Sequence of videos showing schematic frames modelled using the diffusion model output, alongside their photorealistic counterpart after style transfer.</em></p>
 
 This repository is organized in three branches.
 
