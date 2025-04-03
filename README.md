@@ -2,7 +2,7 @@
 
 <p align="center">
     <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/synthTest1.gif" width="40%" title="GIF 1">
-    <img src="[images/synthTest2.gif](https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/synthTest2.gif)" width="40%" title="GIF 2">
+    <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/synthTest2.gif" width="40%" title="GIF 2">
 </p>
 
 <p align="center"><em>Figure: Sequence of videos showing schematic frames modelled using the diffusion model output, alongside their photorealistic counterpart after style transfer.</em></p>
