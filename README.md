@@ -1,5 +1,13 @@
 # Real-like synthetic sperm video generation from learned behaviors  &nbsp;&nbsp; 
 
+<p align="center">
+    <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/synthTest1.gif" width="40%" title="GIF 1">
+    <img src="https://github.com/SergioHdezG/sperm-diffuser/blob/main/images/synthTest2.gif" width="40%" title="GIF 2">
+</p>
+
+<p align="center"><em>Figure: Sequence of videos showing schematic frames modelled using the diffusion model output, alongside their photorealistic counterpart after style transfer.</em></p>
+
+
 This branch is a fork of the tensorflow 2 implementation of CycleGAN: [CycleGAN-Tensorflow-2](https://github.com/LynnHo/CycleGAN-Tensorflow-2). For deeper information on how to use it please go to the original repository.
 
 This repository is organized in three branches.
