@@ -1,4 +1,9 @@
 # Real-like synthetic sperm video generation from learned behaviors  &nbsp;&nbsp; 
+<p align="right">
+  <a href="https://doi.org/10.1007/s10489-025-06407-3" target="_blank">
+    <img src="https://img.shields.io/badge/View%20Paper-DOI-blue?style=for-the-badge&logo=springer" alt="View Paper DOI">
+  </a>
+</p>
 
 <p align="center">
     <img src="images/synthTest1.gif" width="40%" title="GIF 1">
