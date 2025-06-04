@@ -7,21 +7,8 @@
 
 <p align="center"><em>Figure: Sequence of videos showing schematic frames modelled using the diffusion model output, alongside their photorealistic counterpart after style transfer.</em></p>
 
+If you’d like to learn more about this work, please check out our paper:
 [**Real-like synthetic sperm video generation from learned behaviors**](https://doi.org/10.1007/s10489-025-06407-3)
-
-If you use this code or dataset in your research, please cite it as follows:
-
-```bibtex
-@article{hernandez2025real,
-  title={Real-like synthetic sperm video generation from learned behaviors},
-  author={Hern{\'a}ndez-Garc{\'\i}a, Sergio and Cuesta-Infante, Alfredo and Makris, Dimitrios and S. Montemayor, Antonio},
-  journal={Applied Intelligence},
-  volume={55},
-  number={6},
-  pages={518},
-  year={2025},
-  publisher={Springer}
-}
 
 This repository is organized in three branches.
 
@@ -136,3 +123,19 @@ Note that the paths needs to be set to load the desired dataset:
 - **data_file:** Ground truth data ('diffuser/datasets/BezierSplinesData/progressive').
 - **synth_data_file:** Synthetic data path ('diffuser/datasets/synthdata_progressive_sperm/progressive_data').
 - **figures_path:** path to save figures.
+
+If you use this code or dataset in your research, please cite it as follows:
+
+##  Citation
+
+```bibtex
+@article{hernandez2025real,
+  title={Real-like synthetic sperm video generation from learned behaviors},
+  author={Hern{\'a}ndez-Garc{\'\i}a, Sergio and Cuesta-Infante, Alfredo and Makris, Dimitrios and S. Montemayor, Antonio},
+  journal={Applied Intelligence},
+  volume={55},
+  number={6},
+  pages={518},
+  year={2025},
+  publisher={Springer}
+}
