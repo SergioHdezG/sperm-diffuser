@@ -7,6 +7,22 @@
 
 <p align="center"><em>Figure: Sequence of videos showing schematic frames modelled using the diffusion model output, alongside their photorealistic counterpart after style transfer.</em></p>
 
+[**Real-like synthetic sperm video generation from learned behaviors**](https://doi.org/10.1007/s10489-025-06407-3)
+
+If you use this code or dataset in your research, please cite it as follows:
+
+```bibtex
+@article{hernandez2025real,
+  title={Real-like synthetic sperm video generation from learned behaviors},
+  author={Hern{\'a}ndez-Garc{\'\i}a, Sergio and Cuesta-Infante, Alfredo and Makris, Dimitrios and S. Montemayor, Antonio},
+  journal={Applied Intelligence},
+  volume={55},
+  number={6},
+  pages={518},
+  year={2025},
+  publisher={Springer}
+}
+
 This repository is organized in three branches.
 
 - The [main branch](https://github.com/SergioHdezG/sperm-diffuser) contains the diffusion model to generate schematic sperm videos. It includes the pipeline to generate individual spermatozoon trajectories and annotated videos of multiple schematic spermatozoa. This branch makes use of a modified version of the diffusion model proposed by Janner et al. [[Planning with Diffusion for Flexible Behavior Synthesis](https://github.com/jannerm/diffuser)].
