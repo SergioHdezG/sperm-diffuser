@@ -28,11 +28,10 @@ The synthetically generated dataset is available in [dataset/synthetic_sperm_dat
 # Installation
 
 ```console
-conda create -n tensorflow-2.2 python=3.6
-source activate tensorflow-2.2
-conda install scikit-image tqdm tensorflow-gpu=2.2
-conda install -c conda-forge oyaml
-pip install tensorflow-addons==0.10.0
+conda create -n tensorflow-2.7 python=3.8
+source activate tensorflow-2.7
+conda install scikit-image tqdm tensorflow-gpu=2.7
+pip install tensorflow-addons==0.15.0
 ```
 
 # Use the trained model
